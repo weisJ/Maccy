@@ -68,6 +68,7 @@ class Menu: NSMenu, NSMenuDelegate {
   enum PopupLocation {
     case inMenuBar
     case atMouseCursor(location: CGPoint)
+    case atTextCursor(selectionRect: CGRect)
     case centeredInWindow(frame: CGRect)
     case centeredInScreen(frame: CGRect)
   }
@@ -116,6 +117,11 @@ class Menu: NSMenu, NSMenuDelegate {
          let .centeredInScreen(frame):
       let centeredRect = NSRect.centered(ofSize: size, in: frame)
       menuWindow?.setFrameTopLeftPoint(NSPoint(x: centeredRect.minX, y: centeredRect.minY))
+    case let .atTextCursor(selectionRect):
+      var origin = selectionRect.origin
+      origin.x -= 2 * Menu.popoverGap
+      origin.y -= Menu.popoverGap
+      menuWindow?.setFrameTopLeftPoint(origin)
     default:
       break
     }

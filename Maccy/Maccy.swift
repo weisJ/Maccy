@@ -94,9 +94,71 @@ class Maccy: NSObject {
     statusItemChangeObserver?.invalidate()
   }
 
+  private func currentGlobalTextSelectionRect() -> NSRect? {
+    guard AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeRetainedValue() as NSString: true] as CFDictionary) else {
+      print("Accessibility permissions not granted")
+      return nil
+    }
+
+    guard let screen = NSScreen.forPopup else {
+      print("No active screen")
+      return nil
+    }
+
+    let systemWideElement = AXUIElementCreateSystemWide()
+    var focusedElement : AnyObject?
+
+    let error = AXUIElementCopyAttributeValue(systemWideElement, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+    guard error == .success else {
+      print("Couldn't get the focused element. Probably a webkit application")
+      return nil
+    }
+
+    var selectedRangeValue : AnyObject?
+    let selectedRangeError = AXUIElementCopyAttributeValue(focusedElement as! AXUIElement, kAXSelectedTextRangeAttribute as CFString, &selectedRangeValue)
+    
+    guard selectedRangeError == .success else {
+      return nil
+    }
+
+    var selectedRange : CFRange?
+    AXValueGetValue(selectedRangeValue as! AXValue, AXValueType(rawValue: kAXValueCFRangeType)!, &selectedRange)
+    var selectBounds : AnyObject?
+    let selectedBoundsError = AXUIElementCopyParameterizedAttributeValue(focusedElement as! AXUIElement, kAXBoundsForRangeParameterizedAttribute as CFString, selectedRangeValue!, &selectBounds)
+
+    guard selectedBoundsError == .success else {
+      return nil
+    }
+
+    var selectRect = CGRect()
+    AXValueGetValue(selectBounds as! AXValue, .cgRect, &selectRect)
+    print(selectRect)
+
+    if selectRect.isEmpty {
+      print("Empty...")
+      return nil
+    }
+
+    let frame = screen.frame
+    return NSRect(
+      origin: NSPoint(x: selectRect.origin.x, y: frame.height - selectRect.maxY),
+      size: selectRect.size
+    )
+  }
+
   func popUp() {
     // Grab focused window frame before changing focus
     let windowFrame = NSWorkspace.shared.frontmostApplication?.windowFrame
+
+    if let selectionRect = currentGlobalTextSelectionRect() {
+      self.linkingMenuToStatusItem {
+        self.menu.popUpMenu(
+          at: selectionRect.origin,
+          ofType: .atTextCursor(selectionRect: selectionRect)
+        )
+      }
+      return
+    }
 
     withFocus {
       switch UserDefaults.standard.popupPosition {
