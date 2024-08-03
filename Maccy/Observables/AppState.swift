@@ -14,6 +14,14 @@ class AppState: Sendable {
   var footer: Footer
   var navigator: NavigationManager
 
+  var showPreview: Bool = false
+  var previewItem: HistoryItemDecorator? {
+    get {
+      return showPreview ? navigator.leadHistoryItem : nil
+    }
+    set {}
+  }
+
   var searchVisible: Bool {
     if !Defaults[.showSearch] { return false }
     switch Defaults[.searchVisibility] {
