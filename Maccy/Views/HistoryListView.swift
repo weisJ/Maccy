@@ -50,8 +50,6 @@ struct HistoryListView: View {
         .onChange(of: scenePhase) {
           if scenePhase == .active {
             searchFocused = true
-            HistoryItemDecorator.previewThrottler.minimumDelay = Double(previewDelay) / 1000
-            HistoryItemDecorator.previewThrottler.cancel()
             appState.selection = appState.history.unpinnedItems.first?.id
           } else {
             modifierFlags.flags = []

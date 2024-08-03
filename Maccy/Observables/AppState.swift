@@ -4,7 +4,7 @@ import Foundation
 import Settings
 
 @Observable
-class AppState: Sendable {
+final class AppState: Sendable {
   static let shared = AppState()
 
   var appDelegate: AppDelegate?
@@ -35,6 +35,14 @@ class AppState: Sendable {
         selection = hoverSelection
       }
     }
+  }
+
+  var showPreview: Bool = false
+  var previewItem: HistoryItemDecorator? {
+    get {
+      return showPreview ? history.selectedItem : nil
+    }
+    set {}
   }
 
   var searchVisible: Bool {
@@ -89,7 +97,6 @@ class AppState: Sendable {
   }
 
   func highlightPrevious() {
-    isKeyboardNavigating = true
     if let selectedItem = history.selectedItem {
       if let nextItem = history.items.filter(\.isVisible).item(before: selectedItem) {
         selectFromKeyboardNavigation(nextItem.id)
