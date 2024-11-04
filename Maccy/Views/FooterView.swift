@@ -22,7 +22,7 @@ struct FooterView: View {
     VStack(spacing: 0) {
       Divider()
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.bottom, 6)
 
       ZStack {
         FooterItemView(item: footer.items[0])
@@ -64,5 +64,6 @@ struct FooterView: View {
     }
     .opacity(showFooter ? 1 : 0)
     .frame(maxHeight: showFooter ? nil : 0)
+    .padding(.bottom, showFooter ? 5 : 0)
   }
 }

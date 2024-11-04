@@ -11,6 +11,7 @@ struct HistoryListView: View {
 
   @Default(.pinTo) private var pinTo
   @Default(.previewDelay) private var previewDelay
+  @Default(.showFooter) private var showFooter
 
   private var pinnedItems: [HistoryItemDecorator] {
     appState.history.pinnedItems.filter(\.isVisible)
@@ -89,6 +90,8 @@ struct HistoryListView: View {
         }
       }
       .contentMargins(.leading, 10, for: .scrollIndicators)
+      .padding(.top, appState.searchVisible ? 6 : 4)
+      .padding(.bottom, showFooter ? 6 : 5)
     }
 
     if pinTo == .bottom {
