@@ -38,11 +38,14 @@ class HistoryItemDecorator: Identifiable, Hashable {
 
     return url.deletingPathExtension().lastPathComponent
   }
+  var urlContext: String? {
+    return item.contextUrl?.plainHost
+  }
 
   var imageGenerationTask: Task<(), Error>?
   var previewImage: NSImage?
   var thumbnailImage: NSImage?
-  var applicationImage: ApplicationImage
+  var applicationImage: AppImage
 
   // 10k characters seems to be more than enough on large displays
   var text: String { item.previewableText.shortened(to: 10_000) }
@@ -63,12 +66,15 @@ class HistoryItemDecorator: Identifiable, Hashable {
     self.item = item
     self.shortcuts = shortcuts
     self.title = item.title
-    self.applicationImage = ApplicationImageCache.shared.getImage(item: item)
+    self.applicationImage = ApplicationImageCache.fallback
 
     synchronizeItemPin()
     synchronizeItemTitle()
     imageGenerationTask = Task {
       await sizeImages()
+    }
+    Task {
+      await setupAppImage()
     }
   }
 
@@ -90,6 +96,14 @@ class HistoryItemDecorator: Identifiable, Hashable {
       thumbnailImage = nil
       return
     }
+  }
+
+  @MainActor
+  func setupAppImage() {
+    if item.contextUrl == nil {
+      item.contextUrl = item.generateContextUrl()
+    }
+    self.applicationImage = ApplicationImageCache.shared.getImage(item: self.item)
   }
 
   func highlight(_ query: String, _ ranges: [Range<String.Index>]) {

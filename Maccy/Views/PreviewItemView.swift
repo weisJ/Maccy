@@ -30,13 +30,16 @@ struct PreviewItemView: View {
         Divider()
           .padding(.vertical)
 
-        if let application = item.application {
-          HStack(spacing: 3) {
-            Text("Application", tableName: "PreviewItemView")
-            AppImageView(appImage: item.applicationImage, size: NSSize(width: 11, height: 11))
-            Text(application)
+      if let application = item.application {
+        HStack(spacing: 3) {
+          Text("Application", tableName: "PreviewItemView")
+          AppImageView(appImage: item.applicationImage, size: NSSize(width: 11, height: 11))
+          Text(application)
+          if let urlContext = item.urlContext {
+            Text("(\(urlContext))")
           }
         }
+      }
 
         HStack(spacing: 3) {
           Text("FirstCopyTime", tableName: "PreviewItemView")

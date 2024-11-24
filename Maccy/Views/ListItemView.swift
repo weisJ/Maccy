@@ -31,7 +31,7 @@ enum SelectionAppearance {
 struct ListItemView<Title: View, ID: Hashable>: View {
   var id: ID
   var selectionId: UUID
-  var appIcon: ApplicationImage?
+  var appIcon: AppImage?
   var image: NSImage?
   var accessoryImage: NSImage?
   var attributedTitle: AttributedString?

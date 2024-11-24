@@ -221,6 +221,9 @@ class Clipboard {
     try? Storage.shared.context.save()
 
     historyItem.application = sourceApp?.bundleIdentifier
+    historyItem.contextUrl = historyItem.generateContextUrl()
+
+    
     historyItem.title = historyItem.generateTitle()
 
     onNewCopyHooks.forEach({ $0(historyItem) })
