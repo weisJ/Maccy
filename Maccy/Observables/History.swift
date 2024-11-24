@@ -137,6 +137,7 @@ class History { // swiftlint:disable:this type_body_length
       item.title = existingHistoryItem.title
       if !item.fromMaccy {
         item.application = existingHistoryItem.application
+        item.contextUrl = existingHistoryItem.contextUrl
       }
       Storage.shared.context.delete(existingHistoryItem)
       removedItemIndex = all.firstIndex(where: { $0.item == existingHistoryItem })
