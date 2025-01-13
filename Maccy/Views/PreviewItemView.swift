@@ -17,6 +17,7 @@ struct PreviewItemView: View {
           .resizable()
           .aspectRatio(contentMode: .fit)
           .clipShape(.rect(cornerRadius: 5))
+          .privacySensitive(true)
       } else {
         ScrollView {
           WrappingTextView {
@@ -24,6 +25,7 @@ struct PreviewItemView: View {
               .font(.body)
           }
         }
+        .privacySensitive(true)
       }
 
       Divider()
@@ -32,29 +34,29 @@ struct PreviewItemView: View {
       if let application = item.application {
         HStack(spacing: 3) {
           Text("Application", tableName: "PreviewItemView")
-          AppImageView(appImage: item.applicationImage, size: NSSize(width: 11, height: 11))
-          Text(application)
+          AppImageView(appImage: item.applicationImage, size: NSSize(width: 11, height: 11)).privacySensitive(true)
+          Text(application).privacySensitive(true)
           if let urlContext = item.urlContext {
-            Text("(\(urlContext))")
+            Text("(\(urlContext))").privacySensitive(true)
           }
         }
       }
 
       HStack(spacing: 3) {
         Text("FirstCopyTime", tableName: "PreviewItemView")
-        Text(item.item.firstCopiedAt, style: .date)
-        Text(item.item.firstCopiedAt, style: .time)
+        Text(item.item.firstCopiedAt, style: .date).privacySensitive(true)
+        Text(item.item.firstCopiedAt, style: .time).privacySensitive(true)
       }
 
       HStack(spacing: 3) {
         Text("LastCopyTime", tableName: "PreviewItemView")
-        Text(item.item.lastCopiedAt, style: .date)
-        Text(item.item.lastCopiedAt, style: .time)
+        Text(item.item.lastCopiedAt, style: .date).privacySensitive(true)
+        Text(item.item.lastCopiedAt, style: .time).privacySensitive(true)
       }
 
       HStack(spacing: 3) {
         Text("NumberOfCopies", tableName: "PreviewItemView")
-        Text(String(item.item.numberOfCopies))
+        Text(String(item.item.numberOfCopies)).privacySensitive(true)
       }
       .padding(.bottom)
 

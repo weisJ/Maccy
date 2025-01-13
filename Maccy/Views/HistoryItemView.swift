@@ -20,5 +20,6 @@ struct HistoryItemView: View {
     .onTapGesture {
       appState.history.select(item)
     }
+    .privacySensitive(true)
   }
 }

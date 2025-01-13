@@ -48,6 +48,7 @@ struct ListItemView<Title: View>: View {
           }
         }
         .padding(.trailing, 10)
+        .privacySensitive(false)
       } else {
         Spacer()
           .frame(width: 50)
