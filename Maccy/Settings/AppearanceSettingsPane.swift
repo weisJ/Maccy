@@ -48,6 +48,46 @@ struct AppearanceSettingsPane: View {
     return formatter
   }()
 
+  private func labelForScreen(index screenIndex: Int) -> String {
+    switch screenIndex {
+    case -1:
+      let mainScreen = String(localized: "MainScreen", table: "AppearanceSettings")
+      if let screen = NSScreen.forPopup {
+        return "\(mainScreen): \(screen.localizedName)"
+      }
+      return mainScreen
+    case 0:
+      return String(localized: "ActiveScreen", table: "AppearanceSettings")
+    case _: return screens[screenIndex - 1].localizedName
+    }
+  }
+
+  @ViewBuilder private func screenPicker(for position: PopupPosition)
+    -> some View
+  {
+    let screenBinding: Binding<Int> = Binding {
+      return popupScreen
+    } set: {
+      popupScreen = $0
+      popupAt = position
+    }
+    Picker(selection: screenBinding) {
+      Text(labelForScreen(index: 0))
+        .tag(0)
+
+      ForEach(screens.indices, id: \.self) { index in
+        Text(labelForScreen(index: index + 1))
+          .tag(index + 1)
+      }
+    } label: {
+      if popupAt == position {
+        Text("\(position.description) (\(labelForScreen(index: popupScreen)))")
+      } else {
+        Text(position.description)
+      }
+    }
+  }
+
   var body: some View {
     Settings.Container(contentWidth: 650) {
       Settings.Section(label: { Text("PopupAt", tableName: "AppearanceSettings") }) {
@@ -182,41 +222,6 @@ struct AppearanceSettingsPane: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
       screens = NSScreen.screens
-    }
-  }
-
-  @ViewBuilder
-  private func screenPicker(for position: PopupPosition) -> some View {
-    let screenBinding: Binding<Int> = Binding {
-      return popupScreen
-    } set: {
-      popupScreen = $0
-      popupAt = position
-    }
-
-    Picker(selection: screenBinding) {
-      Text(labelForScreen(index: 0))
-        .tag(0)
-
-      ForEach(screens.indices, id: \.self) { index in
-        Text(labelForScreen(index: index + 1))
-          .tag(index + 1)
-      }
-    } label: {
-      if popupAt == position {
-        Text("\(position.description) (\(labelForScreen(index: popupScreen)))")
-      } else {
-        Text(position.description)
-      }
-    }
-  }
-
-  private func labelForScreen(index screenIndex: Int) -> String {
-    switch screenIndex {
-    case 0:
-      return String(localized: "ActiveScreen", table: "AppearanceSettings")
-    case _:
-      return screens[screenIndex - 1].localizedName
     }
   }
 }

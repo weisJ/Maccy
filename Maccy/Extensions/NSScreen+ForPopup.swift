@@ -3,7 +3,10 @@ import Defaults
 
 extension NSScreen {
   static var forPopup: NSScreen? {
-    let desiredScreen = Defaults[.popupScreen]
+    var desiredScreen = Defaults[.popupScreen]
+    if desiredScreen == -1 {
+      desiredScreen = 1
+    }
     if desiredScreen == 0 || desiredScreen > NSScreen.screens.count {
       return NSScreen.main
     } else {
