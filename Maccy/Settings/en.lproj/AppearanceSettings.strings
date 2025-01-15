@@ -10,6 +10,7 @@
 "SearchVisibilityAlways" = "Always";
 "SearchVisibilityDuringSearch" = "During search";
 "ActiveScreen" = "Active screen";
+"MainScreen" = "Main screen";
 "PinTo" = "Pin to:";
 "PinToTop" = "Top";
 "PinToBottom" = "Bottom";

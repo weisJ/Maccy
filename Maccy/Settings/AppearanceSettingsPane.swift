@@ -50,6 +50,12 @@ struct AppearanceSettingsPane: View {
 
   private func labelForScreen(index screenIndex: Int) -> String {
     switch screenIndex {
+    case -1:
+      let mainScreen = String(localized: "MainScreen", table: "AppearanceSettings")
+      if let screen = NSScreen.forPopup {
+        return "\(mainScreen): \(screen.localizedName)"
+      }
+      return mainScreen
     case 0:
       return String(localized: "ActiveScreen", table: "AppearanceSettings")
     case _: return screens[screenIndex - 1].localizedName
