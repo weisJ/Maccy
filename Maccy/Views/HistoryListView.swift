@@ -23,6 +23,17 @@ struct HistoryListView: View {
     !pinnedItems.isEmpty && !unpinnedItems.isEmpty && appState.history.searchQuery.isEmpty
   }
 
+  private var topPadding: CGFloat {
+    return appState.searchVisible ? 6 : 4
+  }
+
+  private var topPinsVisible: Bool {
+    return !pinnedItems.isEmpty && pinTo == .top
+  }
+  private var bottomPinsVisible: Bool {
+    return !pinnedItems.isEmpty && pinTo == .bottom
+  }
+
   var body: some View {
     if pinTo == .top {
       LazyVStack(spacing: 0) {
@@ -33,7 +44,7 @@ struct HistoryListView: View {
         if showPinsSeparator {
           Divider()
             .padding(.horizontal, 10)
-            .padding(.vertical, 3)
+            .padding(.top, 6)
         }
       }
       .background {
@@ -90,8 +101,8 @@ struct HistoryListView: View {
         }
       }
       .contentMargins(.leading, 10, for: .scrollIndicators)
-      .padding(.top, appState.searchVisible ? 6 : 4)
-      .padding(.bottom, showFooter ? 6 : 5)
+      .padding(.top, topPinsVisible ? 6 : topPadding)
+      .padding(.bottom, showFooter || bottomPinsVisible ? 6 : 5)
     }
 
     if pinTo == .bottom {
@@ -99,7 +110,7 @@ struct HistoryListView: View {
         if showPinsSeparator {
           Divider()
             .padding(.horizontal, 10)
-            .padding(.vertical, 3)
+            .padding(.bottom, 6)
         }
 
         ForEach(pinnedItems) { item in
@@ -114,6 +125,7 @@ struct HistoryListView: View {
             }
         }
       }
+      .padding(.bottom, showFooter ? 6 : 5)
     }
   }
 }
