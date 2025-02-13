@@ -9,10 +9,12 @@
 /* Begin PBXBuildFile section */
 		0ABDD5122BB47F1E0054963B /* NSWorkspace+ApplicationName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ABDD5112BB47F1E0054963B /* NSWorkspace+ApplicationName.swift */; };
 		2F1A79C02C6DFB7800C98EBD /* SearchVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F1A79BF2C6DFB7800C98EBD /* SearchVisibility.swift */; };
+		2F2788032D5E271200882B77 /* EventProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F2788022D5E270900882B77 /* EventProcessing.swift */; };
 		2F39CB042AD9A93C00B749FD /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 2F39CB032AD9A93C00B749FD /* Sparkle */; };
 		2F39CB0A2AD9AE1F00B749FD /* Settings in Frameworks */ = {isa = PBXBuildFile; productRef = 2F39CB092AD9AE1F00B749FD /* Settings */; };
 		2F8B9DE62C5D6E5D0046EF69 /* NSPoint+DefaultsSerializable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F8B9DE52C5D6E5D0046EF69 /* NSPoint+DefaultsSerializable.swift */; };
 		2FB5BCA02CD8F73F008B33F4 /* ApplicationImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FB5BC9F2CD8F73C008B33F4 /* ApplicationImage.swift */; };
+		2FED4DFE2D5CDBFC00F82771 /* Selection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FED4DFD2D5CDBF900F82771 /* Selection.swift */; };
 		2FFC1B9B2CE27D8600518A8A /* ContextUrl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FFC1B9A2CE27D8200518A8A /* ContextUrl.swift */; };
 		2FFF8BC22CE0DBEA00235A78 /* AppImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FFF8BC12CE0DBE600235A78 /* AppImageView.swift */; };
 		2FFF8BC42CE0E1A200235A78 /* URL+Host.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FFF8BC32CE0E19D00235A78 /* URL+Host.swift */; };
@@ -732,6 +734,8 @@
 		DAEE38451E3DBEB100DD2966 /* Maccy */ = {
 			isa = PBXGroup;
 			children = (
+				2F2788022D5E270900882B77 /* EventProcessing.swift */,
+				2FED4DFD2D5CDBF900F82771 /* Selection.swift */,
 				2FBB7A252B5FECBB00C65BBE /* Extensions */,
 				DA68F91F28BD819E007E2F25 /* Intents */,
 				DA05B50F2C234C1C006980FE /* Models */,
@@ -1040,6 +1044,7 @@
 				DA6D98E22AEABE03008A77CE /* Accessibility.swift in Sources */,
 				DAFEF0B8249D7DEE006029E8 /* KeyboardShortcuts.Name+Shortcuts.swift in Sources */,
 				DA1969212C3F6C6800258481 /* HistoryItemAction.swift in Sources */,
+				2FED4DFE2D5CDBFC00F82771 /* Selection.swift in Sources */,
 				0ABDD5122BB47F1E0054963B /* NSWorkspace+ApplicationName.swift in Sources */,
 				DA19691A2C3F369800258481 /* HeaderView.swift in Sources */,
 				DA555F082CF0F994009608BD /* ApplicationImageCache.swift in Sources */,
@@ -1072,6 +1077,7 @@
 				DAA072E12C41C6E8006DDFD2 /* FooterView.swift in Sources */,
 				2F1A79C02C6DFB7800C98EBD /* SearchVisibility.swift in Sources */,
 				DAA072DD2C41C61F006DDFD2 /* FooterItemView.swift in Sources */,
+				2F2788032D5E271200882B77 /* EventProcessing.swift in Sources */,
 				DA3EAE0C2AE30F7500F39108 /* NSApplication+Windows.swift in Sources */,
 				DAFE2DDA268A521B00990986 /* String+Shortened.swift in Sources */,
 				2FFC1B9B2CE27D8600518A8A /* ContextUrl.swift in Sources */,

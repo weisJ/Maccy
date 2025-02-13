@@ -1,7 +1,7 @@
 import AppKit
 import Defaults
 
-struct StorageType {
+struct StorageType: Equatable {
   static let files = StorageType(types: [.fileURL])
   static let images = StorageType(types: [.png, .tiff])
   static let text = StorageType(types: [.html, .rtf, .string])

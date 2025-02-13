@@ -11,10 +11,10 @@ class History { // swiftlint:disable:this type_body_length
   static let shared = History()
 
   var items: [HistoryItemDecorator] = []
-  var selectedItem: HistoryItemDecorator? {
+  var selection: Selection<HistoryItemDecorator> = Selection() {
     willSet {
-      selectedItem?.isSelected = false
-      newValue?.isSelected = true
+      selection.forEach { $0.isSelected = false }
+      newValue.forEach { $0.isSelected = true }
     }
   }
 
@@ -27,7 +27,7 @@ class History { // swiftlint:disable:this type_body_length
         updateItems(search.search(string: searchQuery, within: all))
 
         if searchQuery.isEmpty {
-          AppState.shared.selection = unpinnedItems.first?.id
+          AppState.shared.select(unpinnedItems.first?.id)
         } else {
           AppState.shared.highlightFirst()
         }
@@ -52,6 +52,16 @@ class History { // swiftlint:disable:this type_body_length
 
     let key = Sauce.shared.key(for: Int(event.keyCode))
     return items.first { $0.shortcuts.contains(where: { $0.key == key }) }
+  }
+
+  var visibleItems: [HistoryItemDecorator] {
+    return self.items.filter(\.isVisible)
+  }
+  var firstVisibleItem: HistoryItemDecorator? {
+    return self.items.first(where: \.isVisible)
+  }
+  var lastVisibleItem: HistoryItemDecorator? {
+    return self.items.last(where: \.isVisible)
   }
 
   private let search = Search()
@@ -216,42 +226,104 @@ class History { // swiftlint:disable:this type_body_length
     }
   }
 
-  @MainActor
-  func select(_ item: HistoryItemDecorator?) {
-    guard let item else {
+  private func knownStorageType(of item: HistoryItem) -> StorageType? {
+    let matches = { (storageType: StorageType) in
+      return item.contents.contains(where: { storageType.types.contains(NSPasteboard.PasteboardType($0.type)) })
+    }
+    if matches(StorageType.files) {
+      return StorageType.files
+    }
+    if matches(StorageType.images) {
+      return StorageType.images
+    }
+    if matches(StorageType.text) {
+      return StorageType.text
+    }
+    return nil
+  }
+
+  private func processItemsForSelect(_ items: [HistoryItemDecorator],_ action: (HistoryItem) async -> Void) async {
+    guard !items.isEmpty else {
       return
     }
 
-    let modifierFlags = NSApp.currentEvent?.modifierFlags
+    let separatorItem = HistoryItem(contents: [
+      HistoryItemContent(
+        type: NSPasteboard.PasteboardType.string.rawValue,
+        value: "\n".data(using: .utf8)
+      ),
+      HistoryItemContent(
+        type: NSPasteboard.PasteboardType.transient.rawValue,
+        value: "".data(using: .utf8)
+      )
+    ])
+
+    var currentIsText = false
+    for item in items {
+      if knownStorageType(of: item.item) == .text {
+        if (currentIsText) {
+          await action(separatorItem)
+        }
+        currentIsText = true
+      } else {
+        currentIsText = false
+      }
+      await action(item.item)
+    }
+  }
+
+  private func currentModifierFlags() -> NSEvent.ModifierFlags {
+    return NSApp.currentEvent?.modifierFlags
       .intersection(.deviceIndependentFlagsMask)
       .subtracting([.capsLock, .numericPad, .function]) ?? []
+  }
+
+  @MainActor
+  func select(_ items: [HistoryItemDecorator]) async {
+    if items.isEmpty {
+      return
+    }
+    AppState.shared.popup.close()
+
+    let modifierFlags = currentModifierFlags()
+
+    await processItemsForSelect(items) { item in
+      await select(item, flags: modifierFlags)
+      do {
+        try await Task.sleep(for: .milliseconds(50))
+      } catch {}
+    }
+
+    Task {
+      searchQuery = ""
+    }
+  }
+
+  @MainActor
+  private func select(_ item: HistoryItem, flags: NSEvent.ModifierFlags? = nil) async {
+    let modifierFlags = flags ?? currentModifierFlags()
 
     if modifierFlags.isEmpty {
-      AppState.shared.popup.close()
-      Clipboard.shared.copy(item.item, removeFormatting: Defaults[.removeFormattingByDefault])
+      await Clipboard.shared.copy(item, removeFormatting: Defaults[.removeFormattingByDefault])
       if Defaults[.pasteByDefault] {
-        Clipboard.shared.paste()
+        await Clipboard.shared.paste()
       }
     } else {
       switch HistoryItemAction(modifierFlags) {
       case .copy:
         AppState.shared.popup.close()
-        Clipboard.shared.copy(item.item)
+        await Clipboard.shared.copy(item)
       case .paste:
         AppState.shared.popup.close()
-        Clipboard.shared.copy(item.item)
-        Clipboard.shared.paste()
+        await Clipboard.shared.copy(item)
+        await Clipboard.shared.paste()
       case .pasteWithoutFormatting:
         AppState.shared.popup.close()
-        Clipboard.shared.copy(item.item, removeFormatting: true)
-        Clipboard.shared.paste()
+        await Clipboard.shared.copy(item, removeFormatting: true)
+        await Clipboard.shared.paste()
       case .unknown:
         return
       }
-    }
-
-    Task {
-      searchQuery = ""
     }
   }
 

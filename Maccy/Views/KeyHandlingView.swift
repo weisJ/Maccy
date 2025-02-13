@@ -46,9 +46,14 @@ struct KeyHandlingView<Content: View>: View {
           searchQuery = ""
           return .handled
         case .deleteCurrentItem:
-          if let item = appState.history.selectedItem {
-            appState.highlightNext()
-            appState.history.delete(item)
+          if let leadItem = appState.leadHistoryItem,
+             let item = appState.history.visibleItems.nearest(to: leadItem, where: { !$0.isSelected }) {
+            withTransaction(Transaction()) {
+              appState.history.selection.forEach { item in
+                appState.history.delete(item)
+              }
+              appState.select(item.id)
+            }
           }
           return .handled
         case .deleteOneCharFromSearch:
@@ -90,14 +95,43 @@ struct KeyHandlingView<Content: View>: View {
           guard NSApp.characterPickerWindow == nil else {
             return .ignored
           }
+          
 
           appState.highlightFirst()
+          return .handled
+        case .extendToNext:
+          guard NSApp.characterPickerWindow == nil else {
+            return .ignored
+          }
+          appState.extendHighlightToNext()
+          return .handled
+        case .extendToLast:
+          guard NSApp.characterPickerWindow == nil else {
+            return .ignored
+          }
+          appState.extendHighlightToLast()
+          return .handled
+        case .extendToPrevious:
+          guard NSApp.characterPickerWindow == nil else {
+            return .ignored
+          }
+          appState.extendHighlightToPrevious()
+          return .handled
+        case .extendToFirst:
+          guard NSApp.characterPickerWindow == nil else {
+            return .ignored
+          }
+          appState.extendHighlightToFirst()
           return .handled
         case .openPreferences:
           appState.openPreferences()
           return .handled
         case .pinOrUnpin:
-          appState.history.togglePin(appState.history.selectedItem)
+          withTransaction(Transaction()) {
+            appState.history.selection.forEach { item in
+              appState.history.togglePin(item)
+            }
+          }
           return .handled
         case .selectCurrentItem:
           appState.select()
@@ -113,10 +147,10 @@ struct KeyHandlingView<Content: View>: View {
         }
 
         if let item = appState.history.pressedShortcutItem {
-          appState.selection = item.id
+          appState.select(item.id)
           Task {
             try? await Task.sleep(for: .milliseconds(50))
-            appState.history.select(item)
+            await appState.history.select([item])
           }
           return .handled
         }

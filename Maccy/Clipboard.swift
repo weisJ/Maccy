@@ -1,4 +1,5 @@
 import AppKit
+import CoreFoundation
 import Defaults
 import Sauce
 
@@ -63,7 +64,7 @@ class Clipboard {
   }
 
   @MainActor
-  func copy(_ string: String) {
+  func copy(_ string: String) async {
     pasteboard.clearContents()
     pasteboard.setString(string, forType: .string)
     sync()
@@ -71,7 +72,7 @@ class Clipboard {
   }
 
   @MainActor
-  func copy(_ item: HistoryItem?, removeFormatting: Bool = false) {
+  func copy(_ item: HistoryItem?, removeFormatting: Bool = false) async {
     guard let item else { return }
 
     pasteboard.clearContents()
@@ -99,16 +100,18 @@ class Clipboard {
     pasteboard.writeObjects(fileURLItems)
 
     pasteboard.setString("", forType: .fromMaccy)
+
     sync()
+    checkForChangesInPasteboard()
 
     Task {
       Notifier.notify(body: item.title, sound: .knock)
-      checkForChangesInPasteboard()
     }
   }
 
   // Based on https://github.com/Clipy/Clipy/blob/develop/Clipy/Sources/Services/PasteService.swift.
-  func paste() {
+  @MainActor
+  func paste() async {
     Accessibility.check()
 
     // Add flag that left/right modifier key has been pressed.
@@ -132,8 +135,20 @@ class Clipboard {
     let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: vCode, keyDown: false)
     keyVDown?.flags = cmdFlag
     keyVUp?.flags = cmdFlag
-    keyVDown?.post(tap: .cgSessionEventTap)
-    keyVUp?.post(tap: .cgSessionEventTap)
+
+    guard let keyVUp,
+          let keyVDown else {
+      print("ERROR: Failed to create paste events")
+      return
+    }
+
+    let content = pasteboard.string(forType: .string)?.debugDescription ?? "<empty>"
+    do {
+      try await dispatchAndWait(events: [keyVDown, keyVUp], at: .cgSessionEventTap)
+      print("Expected \(content) got \(pasteboard.string(forType: .string).debugDescription)")
+    } catch {
+      print("ERROR: Failed paste")
+    }
   }
 
   func clear() {
@@ -292,9 +307,21 @@ class Clipboard {
     NSApp.hide(self)
   }
 
+  static func stringContents(of contents: [HistoryItemContent]) -> [HistoryItemContent] {
+    return contents.filter { NSPasteboard.PasteboardType($0.type) == .string }
+  }
+
+  static func fileURLContents(of contents: [HistoryItemContent]) -> [HistoryItemContent] {
+    return contents.filter { NSPasteboard.PasteboardType($0.type) == .fileURL }
+  }
+
   private func clearFormatting(_ contents: [HistoryItemContent]) -> [HistoryItemContent] {
+    if contents.contains(where: { NSPasteboard.PasteboardType($0.type) == .transient }) {
+      return contents
+    }
+
     var newContents: [HistoryItemContent] = contents
-    let stringContents = contents.filter { NSPasteboard.PasteboardType($0.type) == .string }
+    let stringContents = Self.stringContents(of: contents)
 
     // If there is no string representation of data,
     // behave like we didn't have to remove formatting.
@@ -303,7 +330,7 @@ class Clipboard {
 
       // Preserve file URLs.
       // https://github.com/p0deje/Maccy/issues/962
-      let fileURLContents = contents.filter { NSPasteboard.PasteboardType($0.type) == .fileURL }
+      let fileURLContents = Self.fileURLContents(of: contents)
       if !fileURLContents.isEmpty {
         newContents += fileURLContents
       }

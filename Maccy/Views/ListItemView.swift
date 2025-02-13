@@ -1,6 +1,36 @@
 import Defaults
 import SwiftUI
 
+enum SelectionAppearance {
+  case none
+  case topConnection
+  case bottomConnection
+  case topBottomConnection
+
+  func rect(cornerRadius: CGFloat) -> some Shape {
+    var cornerRadii = RectangleCornerRadii()
+    switch self {
+    case .none:
+      cornerRadii.topLeading = cornerRadius
+      cornerRadii.topTrailing = cornerRadius
+      cornerRadii.bottomLeading = cornerRadius
+      cornerRadii.bottomTrailing = cornerRadius
+      break
+    case .topConnection:
+      cornerRadii.bottomLeading = cornerRadius
+      cornerRadii.bottomTrailing = cornerRadius
+      break
+    case .bottomConnection:
+      cornerRadii.topLeading = cornerRadius
+      cornerRadii.topTrailing = cornerRadius
+      break
+    case .topBottomConnection:
+      break
+    }
+    return .rect(cornerRadii: cornerRadii)
+  }
+}
+
 struct ListItemView<Title: View>: View {
   var id: UUID
   var appIcon: AppImage?
@@ -10,6 +40,7 @@ struct ListItemView<Title: View>: View {
   var shortcuts: [KeyShortcut]
   var isSelected: Bool
   var help: LocalizedStringKey?
+  var selectionAppearance: SelectionAppearance = .none
   @ViewBuilder var title: () -> Title
 
   @Default(.showApplicationIcons) private var showIcons
@@ -54,7 +85,8 @@ struct ListItemView<Title: View>: View {
         ZStack {
           ForEach(shortcuts) { shortcut in
             KeyboardShortcutView(shortcut: shortcut)
-              .opacity(shortcut.isVisible(shortcuts, modifierFlags.flags) ? 1 : 0)
+              .opacity(
+                shortcut.isVisible(shortcuts, modifierFlags.flags) ? 1 : 0)
           }
         }
         .padding(.trailing, 10)
@@ -69,7 +101,7 @@ struct ListItemView<Title: View>: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .foregroundStyle(isSelected ? Color.white : .primary)
     .background(isSelected ? Color.accentColor.opacity(0.8) : .clear)
-    .clipShape(.rect(cornerRadius: 4))
+    .clipShape(selectionAppearance.rect(cornerRadius: 4))
     .onHover { hovering in
       if hovering {
         if !appState.isKeyboardNavigating {

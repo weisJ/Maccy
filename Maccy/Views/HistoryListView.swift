@@ -20,26 +20,38 @@ struct HistoryListView: View {
     appState.history.unpinnedItems.filter(\.isVisible)
   }
   private var showPinsSeparator: Bool {
-    !pinnedItems.isEmpty && !unpinnedItems.isEmpty && appState.history.searchQuery.isEmpty
+    pinsVisible && !unpinnedItems.isEmpty
+    // && appState.history.searchQuery.isEmpty
   }
 
   private var topPadding: CGFloat {
     return appState.searchVisible ? 6 : 4
   }
 
-  private var topPinsVisible: Bool {
-    return !pinnedItems.isEmpty && pinTo == .top
+  private var bottomPadding: CGFloat {
+    return showFooter ? 6 : 5
   }
-  private var bottomPinsVisible: Bool {
-    return !pinnedItems.isEmpty && pinTo == .bottom
+
+  private var pinsVisible: Bool {
+    return !pinnedItems.isEmpty
+  }
+
+
+  @ViewBuilder
+  private func rangeSelectable(items: [HistoryItemDecorator], topPadding: CGFloat = 0, bottomPadding: CGFloat = 0) -> some View {
+    ForEach(Array(items.enumerated()), id: \.element) { (index, element) in
+      let previous = index > 0 ? items[index - 1] : nil
+      let next = index < items.count - 1 ? items[index + 1] : nil
+      HistoryItemView(item: items[index], previous: previous, next: next)
+        .padding(.top, index == 0 ? topPadding : 0)
+        .padding(.bottom, index == items.count - 1 ? bottomPadding : 0)
+    }
   }
 
   var body: some View {
     if pinTo == .top {
       LazyVStack(spacing: 0) {
-        ForEach(pinnedItems) { item in
-          HistoryItemView(item: item)
-        }
+        rangeSelectable(items: pinnedItems)
 
         if showPinsSeparator {
           Divider()
@@ -55,14 +67,19 @@ struct HistoryListView: View {
             }
         }
       }
+      .padding(.top, pinsVisible ? topPadding : 0)
     }
 
     ScrollView {
       ScrollViewReader { proxy in
         LazyVStack(spacing: 0) {
-          ForEach(unpinnedItems) { item in
-            HistoryItemView(item: item)
-          }
+          let topSeparatorVisible = pinTo == .top && showPinsSeparator
+          let bottomSeparatorVisible = pinTo == .bottom && showPinsSeparator
+          rangeSelectable(
+            items: unpinnedItems,
+            topPadding: topSeparatorVisible ? 6 : topPadding,
+            bottomPadding: bottomSeparatorVisible ? 6 : bottomPadding
+          )
         }
         .task(id: appState.scrollTarget) {
           guard appState.scrollTarget != nil else { return }
@@ -79,7 +96,8 @@ struct HistoryListView: View {
           if scenePhase == .active {
             searchFocused = true
             appState.isKeyboardNavigating = true
-            appState.selection = appState.history.unpinnedItems.first?.id ?? appState.history.pinnedItems.first?.id
+            let newSelection = appState.history.unpinnedItems.first?.id ?? appState.history.pinnedItems.first?.id
+            appState.select(newSelection)
           } else {
             modifierFlags.flags = []
             appState.isKeyboardNavigating = true
@@ -101,8 +119,6 @@ struct HistoryListView: View {
         }
       }
       .contentMargins(.leading, 10, for: .scrollIndicators)
-      .padding(.top, topPinsVisible ? 6 : topPadding)
-      .padding(.bottom, showFooter || bottomPinsVisible ? 6 : 5)
     }
 
     if pinTo == .bottom {
@@ -113,9 +129,7 @@ struct HistoryListView: View {
             .padding(.bottom, 6)
         }
 
-        ForEach(pinnedItems) { item in
-          HistoryItemView(item: item)
-        }
+        rangeSelectable(items: pinnedItems)
       }
       .background {
         GeometryReader { geo in
@@ -125,7 +139,7 @@ struct HistoryListView: View {
             }
         }
       }
-      .padding(.bottom, showFooter ? 6 : 5)
+      .padding(.bottom, pinsVisible ? bottomPadding : 0)
     }
   }
 }
