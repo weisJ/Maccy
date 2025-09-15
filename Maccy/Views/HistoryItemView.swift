@@ -60,6 +60,7 @@ struct HistoryItemView: View {
     .accessibilityIdentifier("copy-history-item")
     .buttonAction(performSelect)
     .onAppear {
+      item.ensureApplicationImage()
       item.ensureThumbnailImage()
     }
     .accessibilityAction(named: Text(item.isPinned ? "history_item_unpin_action" : "history_item_pin_action")) {

@@ -179,6 +179,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       item.title = existingHistoryItem.title
       if !item.fromMaccy {
         item.application = existingHistoryItem.application
+        item.contextUrl = existingHistoryItem.contextUrl
       }
       logger.info("Removing duplicate item '\(item.title)'")
       if let existingDecorator = firstStoredItem(where: { $0.item == existingHistoryItem }) {

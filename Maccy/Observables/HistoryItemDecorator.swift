@@ -40,6 +40,9 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
 
     return url.deletingPathExtension().lastPathComponent
   }
+  var urlContext: String? {
+    return item.contextUrl?.plainHost
+  }
 
   var hasImage: Bool { item.image != nil }
   var hasFileURLs: Bool { !item.fileURLs.isEmpty }
@@ -48,10 +51,11 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
 
   var previewImageGenerationTask: Task<(), Error>?
   var thumbnailImageGenerationTask: Task<(), Error>?
+  var applicationImageGenerationTask: Task<(), Error>?
   var previewImage: NSImage?
   private(set) var previewText = SizedString("")
   var thumbnailImage: NSImage?
-  var applicationImage: ApplicationImage
+  var applicationImage: AppImage?
 
   // 10k characters seems to be more than enough on large displays
   var text: String { previewText.string.shortened(to: 10_000) }
@@ -100,7 +104,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
     self.item = item
     self.shortcuts = shortcuts
     self.title = item.title
-    self.applicationImage = ApplicationImageCache.shared.getImage(item: item)
+    self.applicationImage = nil
 
     synchronizeItemPin()
     synchronizeItemTitle()
@@ -109,6 +113,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
 
   @MainActor
   func ensureThumbnailImage() {
+    
     guard item.image != nil else {
       return
     }
@@ -120,6 +125,19 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
     }
     thumbnailImageGenerationTask = Task { [weak self] in
       self?.generateThumbnailImage()
+    }
+  }
+  
+  @MainActor
+  func ensureApplicationImage() {
+    guard applicationImage == nil else {
+      return
+    }
+    guard applicationImageGenerationTask == nil else {
+      return
+    }
+    applicationImageGenerationTask = Task { [weak self] in
+      self?.setupAppImage()
     }
   }
 
@@ -153,6 +171,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
   func cleanupImages() {
     thumbnailImageGenerationTask?.cancel()
     previewImageGenerationTask?.cancel()
+    applicationImageGenerationTask?.cancel()
     thumbnailImage?.recache()
     previewImage?.recache()
     thumbnailImage = nil
@@ -180,6 +199,14 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
   func sizeImages() {
     generatePreviewImage()
     generateThumbnailImage()
+  }
+
+  @MainActor
+  func setupAppImage() {
+    if item.contextUrl == nil {
+      item.contextUrl = item.generateContextUrl()
+    }
+    self.applicationImage = ApplicationImageCache.shared.getImage(item: self.item)
   }
 
   func highlight(_ query: String, _ ranges: [Range<String.Index>]) {
