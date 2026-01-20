@@ -41,6 +41,7 @@
 		2FD499452FFC489400149F02 /* MovableByWindowBackgroundModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FD499442FFC487F00149F02 /* MovableByWindowBackgroundModifier.swift */; };
 		2FD499472FFC4AEF00149F02 /* ItemEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FD499462FFC4AEF00149F02 /* ItemEditorView.swift */; };
 		2FD5DE512FFE6DD50023FF60 /* LegacyReorderableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FD5DE502FFE6DCE0023FF60 /* LegacyReorderableContainer.swift */; };
+		2FC89B0B2F1F9099005168A9 /* StackedCardsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FC89B0A2F1F908F005168A9 /* StackedCardsView.swift */; };
 		2FF2E94E2E774B5B0093D72C /* NavigationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FF2E94D2E774B570093D72C /* NavigationManager.swift */; };
 		2FF2E9502E7808470093D72C /* AppImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FF2E94F2E7808420093D72C /* AppImageView.swift */; };
 		42E9C329301B7F9C00B6B55B /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 42E9C328301B7F9C00B6B55B /* AppIcon.icon */; };
@@ -232,6 +233,7 @@
 		2FD499442FFC487F00149F02 /* MovableByWindowBackgroundModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovableByWindowBackgroundModifier.swift; sourceTree = "<group>"; };
 		2FD499462FFC4AEF00149F02 /* ItemEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEditorView.swift; sourceTree = "<group>"; };
 		2FD5DE502FFE6DCE0023FF60 /* LegacyReorderableContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyReorderableContainer.swift; sourceTree = "<group>"; };
+		2FC89B0A2F1F908F005168A9 /* StackedCardsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackedCardsView.swift; sourceTree = "<group>"; };
 		2FF2E94D2E774B570093D72C /* NavigationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationManager.swift; sourceTree = "<group>"; };
 		2FF2E94F2E7808420093D72C /* AppImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppImageView.swift; sourceTree = "<group>"; };
 		37AC3B8902CB40CA8294C336 /* pt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pt; path = pt.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -730,6 +732,7 @@
 				2FD499442FFC487F00149F02 /* MovableByWindowBackgroundModifier.swift */,
 				2F1B61CE301BE559000905F9 /* EnumeratedForEach.swift */,
 				2F1091D62F2B6E8100F5C454 /* AsyncView.swift */,
+				2FC89B0A2F1F908F005168A9 /* StackedCardsView.swift */,
 				2FF2E94F2E7808420093D72C /* AppImageView.swift */,
 				DAA072DE2C41C63C006DDFD2 /* ConfirmationView.swift */,
 				DA243D112C2F64820012A27F /* ContentView.swift */,
@@ -1254,6 +1257,7 @@
 				F18F166970893C503065D056 /* View+ButtonAction.swift in Sources */,
 				9B24FC30A093450F29E2CC4A /* View+Invisible.swift in Sources */,
 				DAC14124232367B200FCFA30 /* Search.swift in Sources */,
+				2FC89B0B2F1F9099005168A9 /* StackedCardsView.swift in Sources */,
 				DA0FFA2A2C8D100C00A66C97 /* ModifierFlags+Description.swift in Sources */,
 				DAEE38471E3DBEB100DD2966 /* AppDelegate.swift in Sources */,
 				DAA072DF2C41C63C006DDFD2 /* ConfirmationView.swift in Sources */,
