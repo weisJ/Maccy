@@ -43,6 +43,7 @@ class Popup {
   var extraTopHeight: CGFloat = 0
   var extraBottomHeight: CGFloat = 0
   var footerHeight: CGFloat = 0
+  var realHeaderHeight: CGFloat = 0
 
   var minimumHeight: CGFloat {
     // Reserve space for 3 items

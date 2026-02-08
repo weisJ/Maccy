@@ -41,8 +41,8 @@ struct ToolbarButton<Label: View>: View {
     Button(action: action) {
       label()
     }
-    .buttonStyle(.plain)
-    .frame(height: 23)
+    .frame(width: 28, height: 28)
+    .modifier(ToolbarButtonModifier())
     .excludeFromWindowMovableByBackground()
   }
 
@@ -62,6 +62,49 @@ struct ToolbarButton<Label: View>: View {
     )
   }
 
+}
+
+private struct ToolbarButtonModifier: ViewModifier {
+
+  func body(content: Content) -> some View {
+    if #available(macOS 26.0, *) {
+      content
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+    } else {
+      content
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.circle)
+    }
+  }
+
+}
+
+private struct ToolbarContainerModifier: ViewModifier {
+
+  func body(content: Content) -> some View {
+    if #available(macOS 26.0, *) {
+      GlassEffectContainer {
+        content
+      }
+    } else {
+      content
+    }
+  }
+
+}
+
+extension View {
+  @ViewBuilder fileprivate func unionEffect<ID: Hashable>(
+    id: ID,
+    namespace: Namespace.ID
+  ) -> some View {
+    if #available(macOS 26.0, *) {
+      self.glassEffectUnion(id: id, namespace: namespace)
+    } else {
+      self
+    }
+  }
 }
 
 struct ToolbarView: View {
@@ -148,6 +191,7 @@ struct ToolbarView: View {
           replacementKey: "pinKey"
         )
         .disabled(pinActionDisabled)
+        .unionEffect(id: Section.itemOptions, namespace: unionNamespace)
 
         ToolbarButton {
           appState.isEditingItem = true
@@ -170,6 +214,7 @@ struct ToolbarView: View {
           tableName: "PreviewItemView",
           replacementKey: "deleteKey"
         )
+        .unionEffect(id: Section.itemOptions, namespace: unionNamespace)
       }
 
       if appState.navigator.pasteStackSelected {
@@ -182,6 +227,7 @@ struct ToolbarView: View {
         .help(Text("StopPasteStack", tableName: "PreviewItemView"))
       }
     }
+    .modifier(ToolbarContainerModifier())
     .sheet(item: $editingItem, onDismiss: {
       finishEditingPinnedItem()
     }) { item in
