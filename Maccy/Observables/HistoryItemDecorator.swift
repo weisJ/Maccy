@@ -39,7 +39,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
     return url.deletingPathExtension().lastPathComponent
   }
 
-  var hasImage: Bool { item.image != nil }
+  var hasImage: Bool { item.hasImageContent }
 
   var previewImageGenerationTask: Task<(), Error>?
   var thumbnailImageGenerationTask: Task<(), Error>?

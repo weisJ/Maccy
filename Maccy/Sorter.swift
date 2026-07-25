@@ -29,6 +29,41 @@ class Sorter {
     }
   }
 
+  /// Stable storage ordering used for offset-based page queries.
+  ///
+  /// Secondary descriptors keep equal primary values from moving between
+  /// neighboring pages.
+  func sortDescriptors(
+    by: By = Defaults[.sortBy]
+  ) -> [SortDescriptor<HistoryItem>] {
+    switch by {
+    case .lastCopiedAt:
+      return [
+        SortDescriptor(\.lastCopiedAt, order: .reverse),
+        SortDescriptor(\.firstCopiedAt, order: .reverse),
+        SortDescriptor(\.numberOfCopies, order: .reverse),
+        SortDescriptor(\.title),
+        SortDescriptor(\.persistentModelID),
+      ]
+    case .firstCopiedAt:
+      return [
+        SortDescriptor(\.firstCopiedAt, order: .reverse),
+        SortDescriptor(\.lastCopiedAt, order: .reverse),
+        SortDescriptor(\.numberOfCopies, order: .reverse),
+        SortDescriptor(\.title),
+        SortDescriptor(\.persistentModelID),
+      ]
+    case .numberOfCopies:
+      return [
+        SortDescriptor(\.numberOfCopies, order: .reverse),
+        SortDescriptor(\.lastCopiedAt, order: .reverse),
+        SortDescriptor(\.firstCopiedAt, order: .reverse),
+        SortDescriptor(\.title),
+        SortDescriptor(\.persistentModelID),
+      ]
+    }
+  }
+
   func areInIncreasingOrder(
     _ lhs: HistoryItem,
     _ rhs: HistoryItem,
