@@ -36,10 +36,7 @@ class HistoryItem {
 
   @MainActor
   static var availablePins: [String] {
-    availablePins(in: History.shared.all.compactMap {
-      if $0.isPinned { return $0.item }
-      return nil
-    })
+    availablePins(in: History.shared.allPinnedItems.map(\.item))
   }
 
   @MainActor
@@ -184,7 +181,7 @@ class HistoryItem {
 
     return NSAttributedString(rtf: data, documentAttributes: nil)
   }
-  
+
   func clearDecodedImageCache() {
     cachedDecodedImage?.recache()
     cachedDecodedImage = nil

@@ -26,7 +26,7 @@ class AppState: Sendable {
   }
 
   var menuIconText: String {
-    var title = history.unpinnedItems.first?.text.shortened(to: 100)
+    var title = history.unpinnedItems.items.first?.text.shortened(to: 100)
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     title.unicodeScalars.removeAll(where: CharacterSet.newlines.contains)
     return title.shortened(to: 20)
@@ -76,9 +76,7 @@ class AppState: Sendable {
   @MainActor
   func togglePin() {
     withTransaction(Transaction()) {
-      navigator.selection.forEach { _, item in
-        history.togglePin(item)
-      }
+      history.togglePin(navigator.selection.items)
     }
   }
 
@@ -90,15 +88,7 @@ class AppState: Sendable {
 
   @MainActor
   func deleteSelection() {
-    guard let leadItem = navigator.leadHistoryItem else { return }
-    let nextUnselectedItem = history.visibleItems.nearest(to: leadItem) { !$0.isSelected }
-
-    withTransaction(Transaction()) {
-      navigator.selection.forEach { _, item in
-        history.delete(item)
-      }
-      navigator.select(item: nextUnselectedItem)
-    }
+    navigator.deleteSelection()
   }
 
   func openAbout() {

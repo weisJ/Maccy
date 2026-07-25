@@ -145,7 +145,9 @@ struct PinsSettingsPane: View {
       }
       .onDeleteCommand {
         guard let selection,
-              let item = appState.history.items.first(where: { $0.item.id == selection }) else {
+              let item = appState.history.allPinnedItems.first(where: {
+                $0.item.id == selection
+              }) else {
           return
         }
 

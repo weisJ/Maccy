@@ -35,20 +35,21 @@ class SorterTests: XCTestCase {
     XCTAssertEqual(sorter.sort([item1, item2, item3], by: .numberOfCopies), [item1, item2, item3])
   }
 
-  func testSortByPinToTop() {
+  func testSortIsIndependentOfPinPosition() {
+    item1.pin = "a"
+    item3.pin = "b"
+    let expected = [item1, item3, item2]
+
     Defaults[.pinTo] = .top
-
-    item1.pin = "a"
-    item3.pin = "b"
-    XCTAssertEqual(sorter.sort([item1, item2, item3], by: .lastCopiedAt), [item1, item3, item2])
-  }
-
-  func testSortByPinToBottom() {
+    XCTAssertEqual(
+      sorter.sort([item1, item2, item3], by: .lastCopiedAt),
+      expected
+    )
     Defaults[.pinTo] = .bottom
-
-    item1.pin = "a"
-    item3.pin = "b"
-    XCTAssertEqual(sorter.sort([item1, item2, item3], by: .lastCopiedAt), [item2, item1, item3])
+    XCTAssertEqual(
+      sorter.sort([item1, item2, item3], by: .lastCopiedAt),
+      expected
+    )
   }
 
   @MainActor

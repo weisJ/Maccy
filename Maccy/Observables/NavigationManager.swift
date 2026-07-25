@@ -1,10 +1,21 @@
 import Foundation
 import SwiftUI
 
+struct HistoryScrollRequest: Equatable {
+  let id: UUID
+  let location: HistoryItemLocation
+}
+
 @Observable
-class NavigationManager { // swiftlint:disable:this type_body_length
-  private var history: History
-  private var footer: Footer
+class NavigationManager {
+  var history: History
+  var footer: Footer
+
+  @ObservationIgnored
+  var navigationTask: Task<Void, Never>?
+
+  @ObservationIgnored
+  var navigationGeneration: UInt = 0
 
   init(history: History, footer: Footer) {
     self.history = history
@@ -18,7 +29,8 @@ class NavigationManager { // swiftlint:disable:this type_body_length
     }
   }
 
-  var scrollTarget: UUID?
+  var scrollRequest: HistoryScrollRequest?
+
   var leadSelection: UUID? {
     if let item = leadHistoryItem {
       return item.id
@@ -28,7 +40,8 @@ class NavigationManager { // swiftlint:disable:this type_body_length
     }
     return history.pasteStack?.id
   }
-  private(set) var leadHistoryItem: HistoryItemDecorator? {
+
+  var leadHistoryItem: HistoryItemDecorator? {
     didSet {
       guard oldValue?.id != leadHistoryItem?.id else { return }
 
@@ -43,271 +56,187 @@ class NavigationManager { // swiftlint:disable:this type_body_length
   }
 
   var pasteStackSelected: Bool {
-    return leadSelection != nil && leadSelection == history.pasteStack?.id
+    leadSelection != nil && leadSelection == history.pasteStack?.id
   }
 
   var isManualMultiSelect: Bool = false
   var isMultiSelectInProgress: Bool {
-    return isManualMultiSelect || selection.count > 1
+    isManualMultiSelect || selection.count > 1
   }
 
   var hoverSelectionWhileKeyboardNavigating: UUID?
+  @MainActor
   var isKeyboardNavigating: Bool = true {
     didSet {
       if !isKeyboardNavigating && !isMultiSelectInProgress,
          let hoverSelection = hoverSelectionWhileKeyboardNavigating {
         hoverSelectionWhileKeyboardNavigating = nil
-        select(id: hoverSelection)
+        selectWithoutScrolling(id: hoverSelection)
       }
     }
   }
 
-  var isFirstItemHighlighted: Bool { history.firstVisibleItem == leadHistoryItem }
-
-  private func scroll(to id: UUID?, item: HistoryItemDecorator? = nil) {
-    scrollTarget = id
+  var isFirstItemHighlighted: Bool {
+    guard let leadHistoryItem else { return false }
+    return history.historyItems.isFirst(
+      history.historyItems.loadedItem(id: leadHistoryItem.id)?.location
+    )
   }
 
-  func select(id: UUID) {
-    if let item = history.items.first(where: { $0.id == id }) {
-      select(item: item, footerItem: nil)
-    } else if let item = footer.items.first(where: { $0.id == id }) {
-      select(item: nil, footerItem: item)
-    } else {
-      select(item: nil, footerItem: nil)
+  func requestScroll(to item: HistoryItemDecorator) {
+    guard let locatedItem = history.historyItems.loadedItem(id: item.id) else {
+      return
     }
+    if leadHistoryItem?.id == locatedItem.item.id {
+      leadHistoryItem = locatedItem.item
+    }
+    requestScroll(to: locatedItem)
   }
 
-  func select(item: HistoryItemDecorator? = nil, footerItem: FooterItem? = nil) {
+  func select(
+    item: HistoryItemDecorator? = nil,
+    footerItem: FooterItem? = nil
+  ) {
+    cancelPendingNavigation()
+    let locatedItem = item.flatMap {
+      history.historyItems.loadedItem(id: $0.id)
+    }
     withTransaction(Transaction()) {
-      selectWithoutScrolling(item: item, footerItem: footerItem)
-      scroll(to: item?.id, item: item)
+      applySelection(item: locatedItem, footerItem: footerItem)
+      if let locatedItem {
+        requestScroll(to: locatedItem)
+      } else {
+        scrollRequest = nil
+      }
     }
   }
 
   func addToSelection(item: HistoryItemDecorator) {
-    var newSelectionState = selection
+    cancelPendingNavigation()
+    guard let locatedItem = history.historyItems.loadedItem(id: item.id) else {
+      return
+    }
+
+    var newSelection = selection
+    var newLead = leadHistoryItem.flatMap {
+      history.historyItems.loadedItem(id: $0.id)
+    } ?? locatedItem
 
     if item.isSelected {
-      if newSelectionState.count <= 1 {
-        isManualMultiSelect = !isManualMultiSelect
+      if newSelection.count <= 1 {
+        isManualMultiSelect.toggle()
       } else {
-        newSelectionState.remove(item)
+        newSelection.remove(item)
+        if item == leadHistoryItem,
+           let item = newSelection.items.last,
+           let locatedItem = history.historyItems.loadedItem(id: item.id) {
+          newLead = locatedItem
+        }
       }
     } else {
-      newSelectionState.add(item)
+      newSelection.add(item)
+      newLead = locatedItem
     }
 
     withTransaction(Transaction()) {
-      selection = newSelectionState
-      leadHistoryItem = item
-      scrollTarget = leadSelection
-    }
-  }
-
-  func extendSelection(
-    from fromItem: HistoryItemDecorator,
-    to toItem: HistoryItemDecorator,
-    isRange: Bool
-  ) {
-    var newSelectionState = selection
-
-    if isRange {
-      if let itemRange = history.visibleItems.between(
-        from: fromItem,
-        to: toItem,
-        inOrder: false
-      ) {
-        newSelectionState = Selection(items: itemRange)
-      }
-    } else {
-      if toItem.isSelected {
-        newSelectionState.remove(fromItem)
-      } else {
-        newSelectionState.add(toItem)
-      }
-    }
-
-    withTransaction(Transaction()) {
-      selection = newSelectionState
-      leadHistoryItem = toItem
-      scrollTarget = leadSelection
+      selection = newSelection
+      leadHistoryItem = newLead.item
+      requestScroll(to: newLead)
     }
   }
 
   func selectWithoutScrolling(id: UUID) {
-    if let stack = history.pasteStack,
-       stack.id == id {
-      selectWithoutScrolling(item: nil, footerItem: nil)
-    } else if let item = history.items.first(where: { $0.id == id }) {
+    cancelPendingNavigation()
+    if let stack = history.pasteStack, stack.id == id {
+      clearSelection()
+    } else if let item = history.historyItems.loadedItem(id: id) {
       if !isMultiSelectInProgress {
-        selectWithoutScrolling(item: item, footerItem: nil)
+        applySelection(item: item)
       }
     } else if let item = footer.items.first(where: { $0.id == id }) {
-      selectWithoutScrolling(item: nil, footerItem: item)
-    } else {
-      selectWithoutScrolling(item: nil, footerItem: nil)
+      applySelection(footerItem: item)
     }
   }
 
-  func selectWithoutScrolling(
-    item: HistoryItemDecorator? = nil,
+  @MainActor
+  func nearestUnselectedItem(
+    beforeDeleting items: [HistoryItemDecorator]
+  ) async -> LocatedHistoryItem? {
+    guard let leadHistoryLocation = resolveLeadHistoryItem()?.location else {
+      return nil
+    }
+    let selectedIDs = Set(items.map(\.id))
+    return try? await history.historyItems.nearest(
+      to: leadHistoryLocation,
+      where: { !selectedIDs.contains($0.id) }
+    )
+  }
+
+  private func applySelection(
+    item: LocatedHistoryItem? = nil,
     footerItem: FooterItem? = nil
   ) {
-    if let item = item {
+    if let item {
       selectInHistory(item)
-    } else if let footerItem = footerItem {
+    } else if let footerItem {
       selectInFooter(footerItem)
     } else {
-      leadHistoryItem = nil
-      selection = .init()
-      footer.selectedItem = nil
+      clearSelection()
     }
   }
 
-  private func selectInHistory(_ item: HistoryItemDecorator) {
-    leadHistoryItem = item
-    selection = .init(items: [item])
+  private func selectInHistory(_ item: LocatedHistoryItem) {
+    leadHistoryItem = item.item
+    selection = Selection(items: [item.item])
     footer.selectedItem = nil
   }
 
   private func selectInFooter(_ item: FooterItem) {
     leadHistoryItem = nil
     if !isMultiSelectInProgress {
-      selection = .init()
+      selection = Selection()
     }
     footer.selectedItem = item
   }
 
-  private func selectFromKeyboardNavigation(
-    item: HistoryItemDecorator? = nil,
+  private func clearSelection() {
+    leadHistoryItem = nil
+    selection = Selection()
+    footer.selectedItem = nil
+  }
+
+  func resolveLeadHistoryItem() -> LocatedHistoryItem? {
+    guard let leadHistoryItem else { return nil }
+    guard let resolved = history.historyItems.loadedItem(
+      id: leadHistoryItem.id
+    ) else {
+      return nil
+    }
+    self.leadHistoryItem = resolved.item
+    return resolved
+  }
+
+  func requestScroll(to item: LocatedHistoryItem) {
+    scrollRequest = HistoryScrollRequest(
+      id: item.item.id,
+      location: item.location
+    )
+  }
+
+  @MainActor
+  func selectFromKeyboardNavigation(
+    item: LocatedHistoryItem? = nil,
     footerItem: FooterItem? = nil
   ) {
     isKeyboardNavigating = true
     isManualMultiSelect = false
-    select(item: item, footerItem: footerItem)
-  }
-
-  private func extendHistorySelectionFromKeyboardNavigation(
-    from fromItem: HistoryItemDecorator,
-    to toItem: HistoryItemDecorator,
-    isRange: Bool
-  ) {
-    isKeyboardNavigating = true
-    extendSelection(from: fromItem, to: toItem, isRange: isRange)
-  }
-
-  func highlightFirst() {
-    if let item = history.firstVisibleItem {
-      selectFromKeyboardNavigation(item: item)
-    } else {
-      selectFromKeyboardNavigation(item: nil)
-    }
-  }
-
-  func highlightPrevious() {
-    guard let lead = leadSelection else { return }
-
-    if let historyItem = history.firstVisibleItem(where: { $0.id == lead }) {
-      if let nextItem = history.visibleItem(before: historyItem) {
-        selectFromKeyboardNavigation(item: nextItem)
-      } else if history.pasteStack != nil {
-        selectWithoutScrolling(item: nil)
+    withTransaction(Transaction()) {
+      applySelection(item: item, footerItem: footerItem)
+      if let item {
+        requestScroll(to: item)
       } else {
-        highlightFirst()
-      }
-    } else if let footerItem = footer.firstVisibleItem(where: { $0.id == lead }) {
-      if let nextItem = footer.visibleItem(before: footerItem) {
-        selectFromKeyboardNavigation(footerItem: nextItem)
-      } else if let nextItem = history.lastVisibleItem {
-        selectFromKeyboardNavigation(item: nextItem)
+        scrollRequest = nil
       }
     }
   }
-
-  func highlightNext(allowCycle: Bool = false) {
-    guard let lead = leadSelection else { return }
-
-    if leadSelection == history.pasteStack?.id {
-      highlightFirst()
-      return
-    }
-
-    if let historyItem = history.firstVisibleItem(where: { $0.id == lead }) {
-      if let nextItem = history.visibleItem(after: historyItem) {
-        selectFromKeyboardNavigation(item: nextItem)
-      } else if let nextItem = footer.firstVisibleItem {
-        selectFromKeyboardNavigation(footerItem: nextItem)
-      } else if allowCycle {
-        highlightFirst()
-      }
-    } else if let footerItem = footer.firstVisibleItem(where: { $0.id == lead }) {
-      if let nextItem = footer.visibleItem(after: footerItem) {
-        selectFromKeyboardNavigation(footerItem: nextItem)
-      } else if let nextItem = footer.firstVisibleItem {
-        selectFromKeyboardNavigation(footerItem: nextItem)
-      } else if allowCycle {
-        // End of footer; cycle to the beginning
-        highlightFirst()
-      }
-    }
-  }
-
-  func highlightLast() {
-    guard let lead = leadSelection else { return }
-
-    if let historyItem = history.firstVisibleItem(where: { $0.id == lead }) {
-      if historyItem == history.lastVisibleItem,
-         let nextItem = footer.firstVisibleItem {
-        selectFromKeyboardNavigation(footerItem: nextItem)
-      } else {
-        selectFromKeyboardNavigation(item: history.lastVisibleItem)
-      }
-    } else if footer.selectedItem != nil {
-      selectFromKeyboardNavigation(footerItem: footer.lastVisibleItem)
-    } else {
-      selectFromKeyboardNavigation(footerItem: footer.firstVisibleItem)
-    }
-  }
-
-  func extendHighlightToNext() {
-    if let leadSelection,
-       let leadItem = history.firstVisibleItem(where: {$0.id == leadSelection}) {
-      guard let nextItem = history.visibleItem(after: leadItem) else { return }
-      extendHistorySelectionFromKeyboardNavigation(from: leadItem, to: nextItem, isRange: false)
-    } else {
-      highlightNext()
-    }
-  }
-
-  func extendHighlightToPrevious() {
-    if let leadSelection,
-       let leadItem = history.firstVisibleItem(where: {$0.id == leadSelection}) {
-      guard let nextItem = history.visibleItem(before: leadItem) else { return }
-      extendHistorySelectionFromKeyboardNavigation(from: leadItem, to: nextItem, isRange: false)
-    } else {
-      highlightPrevious()
-    }
-  }
-
-  func extendHighlightToFirst() {
-    if let leadSelection,
-       let leadItem = history.firstVisibleItem(where: {$0.id == leadSelection}) {
-      guard let nextItem = history.firstVisibleItem else { return }
-      extendHistorySelectionFromKeyboardNavigation(from: leadItem, to: nextItem, isRange: true)
-    } else {
-      highlightFirst()
-    }
-  }
-
-  func extendHighlightToLast() {
-    if let leadSelection,
-       let leadItem = history.firstVisibleItem(where: {$0.id == leadSelection}) {
-      guard let nextItem = history.lastVisibleItem else { return }
-      extendHistorySelectionFromKeyboardNavigation(from: leadItem, to: nextItem, isRange: true)
-    } else {
-      highlightFirst()
-    }
-  }
-
 }

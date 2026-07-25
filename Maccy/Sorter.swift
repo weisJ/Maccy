@@ -24,12 +24,16 @@ class Sorter {
   }
 
   func sort(_ items: [HistoryItem], by: By = Defaults[.sortBy]) -> [HistoryItem] {
-    return items
-      .sorted(by: { return bySortingAlgorithm($0, $1, by) })
-      .sorted(by: byPinned)
+    items.sorted {
+      areInIncreasingOrder($0, $1, by: by)
+    }
   }
 
-  private func bySortingAlgorithm(_ lhs: HistoryItem, _ rhs: HistoryItem, _ by: By) -> Bool {
+  func areInIncreasingOrder(
+    _ lhs: HistoryItem,
+    _ rhs: HistoryItem,
+    by: By = Defaults[.sortBy]
+  ) -> Bool {
     switch by {
     case .firstCopiedAt:
       return lhs.firstCopiedAt > rhs.firstCopiedAt
@@ -37,14 +41,6 @@ class Sorter {
       return lhs.numberOfCopies > rhs.numberOfCopies
     default:
       return lhs.lastCopiedAt > rhs.lastCopiedAt
-    }
-  }
-
-  private func byPinned(_ lhs: HistoryItem, _ rhs: HistoryItem) -> Bool {
-    if Defaults[.pinTo] == .bottom {
-      return (lhs.pin == nil) && (rhs.pin != nil)
-    } else {
-      return (lhs.pin != nil) && (rhs.pin == nil)
     }
   }
 }

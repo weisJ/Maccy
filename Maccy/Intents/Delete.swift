@@ -16,13 +16,14 @@ struct Delete: AppIntent, CustomIntentMigratedAppIntent {
   private let positionOffset = 1
 
   func perform() async throws -> some IntentResult {
-    let items = AppState.shared.history.items
     let index = number - positionOffset
-    guard items.count >= index else {
+    guard let locatedItem = try await AppState.shared.history.historyItems.item(
+      atDisplayIndex: index
+    ) else {
       throw AppIntentError.notFound
     }
 
-    await AppState.shared.history.delete(items[index])
+    await AppState.shared.history.delete(locatedItem.item)
 
     return .result()
   }

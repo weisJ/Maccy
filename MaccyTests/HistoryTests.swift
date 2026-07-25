@@ -6,29 +6,38 @@ import Defaults
 class HistoryTests: XCTestCase {
   let savedSize = Defaults[.size]
   let savedSortBy = Defaults[.sortBy]
+  let savedPinTo = Defaults[.pinTo]
   let history = History.shared
+
+  var displayedItems: [HistoryItemDecorator] {
+    Defaults[.pinTo] == .top
+      ? history.pinnedItems + history.unpinnedItems.items
+      : history.unpinnedItems.items + history.pinnedItems
+  }
 
   override func setUp() {
     super.setUp()
     history.clearAll()
     Defaults[.size] = 10
     Defaults[.sortBy] = .firstCopiedAt
+    Defaults[.pinTo] = .top
   }
 
   override func tearDown() {
     super.tearDown()
     Defaults[.size] = savedSize
     Defaults[.sortBy] = savedSortBy
+    Defaults[.pinTo] = savedPinTo
   }
 
   func testDefaultIsEmpty() {
-    XCTAssertEqual(history.items, [])
+    XCTAssertEqual(displayedItems, [])
   }
 
   func testAdding() {
     let first = history.add(historyItem("foo"))
     let second = history.add(historyItem("bar"))
-    XCTAssertEqual(history.items, [second, first])
+    XCTAssertEqual(displayedItems, [second, first])
   }
 
   func testAddingSame() {
@@ -44,13 +53,16 @@ class HistoryTests: XCTestCase {
     third.application = "Xcode.app"
     history.add(third)
 
-    XCTAssertEqual(history.items, [firstDecorator, secondDecorator])
-    XCTAssertTrue(history.items[0].item.lastCopiedAt > history.items[0].item.firstCopiedAt)
+    XCTAssertEqual(displayedItems, [firstDecorator, secondDecorator])
+    XCTAssertTrue(
+      displayedItems[0].item.lastCopiedAt
+        > displayedItems[0].item.firstCopiedAt
+    )
     // TODO: This works in reality but fails in tests?!
-    // XCTAssertEqual(history.items[0].item.numberOfCopies, 2)
-    XCTAssertEqual(history.items[0].item.pin, "f")
-    XCTAssertEqual(history.items[0].item.title, "xyz")
-    XCTAssertEqual(history.items[0].item.application, "iTerm.app")
+    // XCTAssertEqual(displayedItems[0].item.numberOfCopies, 2)
+    XCTAssertEqual(displayedItems[0].item.pin, "f")
+    XCTAssertEqual(displayedItems[0].item.title, "xyz")
+    XCTAssertEqual(displayedItems[0].item.application, "iTerm.app")
   }
 
   func testAddingItemThatIsSupersededByExisting() {
@@ -84,8 +96,11 @@ class HistoryTests: XCTestCase {
     secondItem.title = secondItem.generateTitle()
     let second = history.add(secondItem)
 
-    XCTAssertEqual(history.items, [second])
-    XCTAssertEqual(Set(history.items[0].item.contents), Set(firstContents))
+    XCTAssertEqual(displayedItems, [second])
+    XCTAssertEqual(
+      Set(displayedItems[0].item.contents),
+      Set(firstContents)
+    )
   }
 
   func testAddingItemWithDifferentModifiedType() {
@@ -119,8 +134,11 @@ class HistoryTests: XCTestCase {
     secondItem.contents = secondContents
     let second = history.add(secondItem)
 
-    XCTAssertEqual(history.items, [second])
-    XCTAssertEqual(Set(history.items[0].item.contents), Set(firstContents))
+    XCTAssertEqual(displayedItems, [second])
+    XCTAssertEqual(
+      Set(displayedItems[0].item.contents),
+      Set(firstContents)
+    )
   }
 
   func testAddingItemFromMaccy() {
@@ -152,9 +170,12 @@ class HistoryTests: XCTestCase {
     second.contents = secondContents
     let secondDecorator = history.add(second)
 
-    XCTAssertEqual(history.items, [secondDecorator])
-    XCTAssertEqual(history.items[0].item.application, "Xcode.app")
-    XCTAssertEqual(Set(history.items[0].item.contents), Set(firstContents))
+    XCTAssertEqual(displayedItems, [secondDecorator])
+    XCTAssertEqual(displayedItems[0].item.application, "Xcode.app")
+    XCTAssertEqual(
+      Set(displayedItems[0].item.contents),
+      Set(firstContents)
+    )
   }
 
   func testModifiedAfterCopying() {
@@ -167,22 +188,22 @@ class HistoryTests: XCTestCase {
     ))
     let modifiedItemDecorator = history.add(modifiedItem)
 
-    XCTAssertEqual(history.items, [modifiedItemDecorator])
-    XCTAssertEqual(history.items[0].text, "bar")
+    XCTAssertEqual(displayedItems, [modifiedItemDecorator])
+    XCTAssertEqual(displayedItems[0].text, "bar")
   }
 
   func testClearingUnpinned() {
     let pinned = history.add(historyItem("foo"))
-    pinned.togglePin()
+    history.togglePin(pinned)
     history.add(historyItem("bar"))
     history.clear()
-    XCTAssertEqual(history.items, [pinned])
+    XCTAssertEqual(displayedItems, [pinned])
   }
 
   func testClearingAll() {
     history.add(historyItem("foo"))
     history.clear()
-    XCTAssertEqual(history.items, [])
+    XCTAssertEqual(displayedItems, [])
   }
 
   func testMaxSize() {
@@ -191,9 +212,9 @@ class HistoryTests: XCTestCase {
       items.append(history.add(historyItem(String(index))))
     }
 
-    XCTAssertEqual(history.items.count, 10)
-    XCTAssertTrue(history.items.contains(items[10]))
-    XCTAssertFalse(history.items.contains(items[0]))
+    XCTAssertEqual(displayedItems.count, 10)
+    XCTAssertTrue(displayedItems.contains(items[10]))
+    XCTAssertFalse(displayedItems.contains(items[0]))
   }
 
   func testMaxSizeIgnoresPinned() {
@@ -201,16 +222,16 @@ class HistoryTests: XCTestCase {
 
     let item = history.add(historyItem("0"))
     items.append(item)
-    item.togglePin()
+    history.togglePin(item)
 
     for index in 1...11 {
       items.append(history.add(historyItem(String(index))))
     }
 
-    XCTAssertEqual(history.items.count, 11)
-    XCTAssertTrue(history.items.contains(items[10]))
-    XCTAssertTrue(history.items.contains(items[0]))
-    XCTAssertFalse(history.items.contains(items[1]))
+    XCTAssertEqual(displayedItems.count, 11)
+    XCTAssertTrue(displayedItems.contains(items[10]))
+    XCTAssertTrue(displayedItems.contains(items[0]))
+    XCTAssertFalse(displayedItems.contains(items[1]))
   }
 
   func testMaxSizeIsChanged() {
@@ -221,16 +242,31 @@ class HistoryTests: XCTestCase {
     Defaults[.size] = 5
     history.add(historyItem("11"))
 
-    XCTAssertEqual(history.items.count, 5)
-    XCTAssertTrue(history.items.contains(items[10]))
-    XCTAssertFalse(history.items.contains(items[5]))
+    XCTAssertEqual(displayedItems.count, 5)
+    XCTAssertTrue(displayedItems.contains(items[10]))
+    XCTAssertFalse(displayedItems.contains(items[5]))
   }
 
   func testRemoving() {
     let foo = history.add(historyItem("foo"))
     let bar = history.add(historyItem("bar"))
     history.delete(foo)
-    XCTAssertEqual(history.items, [bar])
+    XCTAssertEqual(displayedItems, [bar])
+  }
+
+  func testPinsStaySeparateFromUnpinnedItems() {
+    let first = history.add(historyItem("first"))
+    let second = history.add(historyItem("second"))
+
+    history.togglePin(first)
+
+    XCTAssertEqual(history.pinnedItems, [first])
+    XCTAssertEqual(history.unpinnedItems.items, [second])
+    XCTAssertEqual(displayedItems, [first, second])
+
+    Defaults[.pinTo] = .bottom
+
+    XCTAssertEqual(displayedItems, [second, first])
   }
 
   private func historyItem(_ value: String) -> HistoryItem {

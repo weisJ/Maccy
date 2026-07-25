@@ -14,10 +14,10 @@ struct HistoryListView: View {
   @Default(.showFooter) private var showFooter
 
   private var pinnedItems: [HistoryItemDecorator] {
-    appState.history.pinnedItems.filter(\.isVisible)
+    appState.history.pinnedItems
   }
   private var unpinnedItems: [HistoryItemDecorator] {
-    appState.history.unpinnedItems.filter(\.isVisible)
+    appState.history.unpinnedItems.items
   }
   private var showPinsSeparator: Bool {
     pinsVisible && !unpinnedItems.isEmpty
@@ -101,22 +101,22 @@ struct HistoryListView: View {
         }
         .padding(.top, scrollTopPadding)
         .padding(.bottom, scrollBottomPadding)
-        .task(id: appState.navigator.scrollTarget) {
-          guard appState.navigator.scrollTarget != nil else { return }
+        .task(id: appState.navigator.scrollRequest) {
+          guard appState.navigator.scrollRequest != nil else { return }
 
           try? await Task.sleep(for: .milliseconds(10))
           guard !Task.isCancelled else { return }
 
-          if let selection = appState.navigator.scrollTarget {
-            proxy.scrollTo(selection)
-            appState.navigator.scrollTarget = nil
+          if let request = appState.navigator.scrollRequest {
+            proxy.scrollTo(request.id)
+            appState.navigator.scrollRequest = nil
           }
         }
         .onChange(of: scenePhase) {
           if scenePhase == .active {
             searchFocused = true
             appState.navigator.isKeyboardNavigating = true
-            appState.navigator.select(item: appState.history.unpinnedItems.first ?? appState.history.pinnedItems.first)
+            appState.navigator.highlightFirstUnpinned()
             appState.preview.enableAutoOpen()
             appState.preview.resetAutoOpenSuppression()
             appState.preview.startAutoOpen()
