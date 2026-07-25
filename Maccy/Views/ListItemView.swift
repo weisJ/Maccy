@@ -1,6 +1,19 @@
 import Defaults
 import SwiftUI
 
+enum ListItemMetrics {
+  static let applicationIconSize: CGFloat = 15
+  static let verticalContentPadding: CGFloat = 5
+
+  static func minimumHeight(showsApplicationIcon: Bool) -> CGFloat {
+    guard showsApplicationIcon else { return Popup.itemHeight }
+    return max(
+      Popup.itemHeight,
+      applicationIconSize + 2 * verticalContentPadding
+    )
+  }
+}
+
 enum SelectionAppearance {
   case none
   case topConnection
@@ -51,11 +64,17 @@ struct ListItemView<Title: View, ID: Hashable>: View {
       if showIcons, let appIcon {
         VStack {
           Spacer(minLength: 0)
-          AppImageView(appImage: appIcon, size: NSSize(width: 15, height: 15))
+          AppImageView(
+            appImage: appIcon,
+            size: NSSize(
+              width: ListItemMetrics.applicationIconSize,
+              height: ListItemMetrics.applicationIconSize
+            )
+          )
           Spacer(minLength: 0)
         }
         .padding(.leading, 4)
-        .padding(.vertical, 5)
+        .padding(.vertical, ListItemMetrics.verticalContentPadding)
       }
 
       Spacer()
@@ -65,14 +84,14 @@ struct ListItemView<Title: View, ID: Hashable>: View {
         Image(nsImage: accessoryImage)
           .accessibilityIdentifier("copy-history-item")
           .padding(.trailing, 5)
-          .padding(.vertical, 5)
+          .padding(.vertical, ListItemMetrics.verticalContentPadding)
       }
 
       if let image {
         Image(nsImage: image)
           .accessibilityIdentifier("copy-history-item")
           .padding(.trailing, 5)
-          .padding(.vertical, 5)
+          .padding(.vertical, ListItemMetrics.verticalContentPadding)
       } else {
         ListItemTitleView(attributedTitle: attributedTitle, title: title)
           .padding(.trailing, 5)
@@ -106,7 +125,11 @@ struct ListItemView<Title: View, ID: Hashable>: View {
       }
       .padding(.trailing, 10)
     }
-    .frame(minHeight: Popup.itemHeight)
+    .frame(
+      minHeight: ListItemMetrics.minimumHeight(
+        showsApplicationIcon: showIcons && appIcon != nil
+      )
+    )
     .id(id)
     .frame(maxWidth: .infinity, alignment: .leading)
     .foregroundStyle(isSelected ? Color.white : .primary)
