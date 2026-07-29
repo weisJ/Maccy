@@ -1,8 +1,10 @@
+// swiftlint:disable file_length
+import SwiftData
 import XCTest
 @testable import Maccy
 
 @MainActor
-final class PagedHistoryItemsTests: XCTestCase {
+final class PagedHistoryItemsTests: XCTestCase { // swiftlint:disable:this type_body_length
   func testLoadsPackedPagesWithExactGlobalIndicesAndBoundaries() async throws {
     let query = InMemoryHistoryQuery(titles: (0..<8).map(String.init))
     let items = PagedHistoryItems(pageSize: 3, loader: query.load)
@@ -24,6 +26,47 @@ final class PagedHistoryItemsTests: XCTestCase {
     XCTAssertEqual(secondPage?.items.map(\.title), ["3", "4", "5"])
     XCTAssertEqual(secondPage?.previousItem?.title, "2")
     XCTAssertEqual(secondPage?.nextItem?.title, "6")
+  }
+
+  func testRelativeNavigationCrossesPageBoundaryAfterEviction() async throws {
+    let query = InMemoryHistoryQuery(titles: (0..<7).map(String.init))
+    let unpinnedItems = PagedHistoryItems(
+      pageSize: 3, maximumUnleasedPageCount: 2, loader: query.load
+    )
+    let items = HistoryItems(
+      pinnedItems: { [] },
+      unpinnedItems: { unpinnedItems },
+      pinsPosition: { .top }
+    )
+
+    try unpinnedItems.load()
+    let endOfSecondPage = try await items.item(
+      at: HistoryItemLocation(section: .unpinned, index: 5)
+    )
+    let locatedEndOfSecondPage = try XCTUnwrap(endOfSecondPage)
+    let startOfThirdPage = try await items.item(after: locatedEndOfSecondPage)
+    let locatedStartOfThirdPage = try XCTUnwrap(startOfThirdPage)
+
+    XCTAssertEqual(locatedStartOfThirdPage.item.title, "6")
+    XCTAssertEqual(
+      locatedStartOfThirdPage.location,
+      HistoryItemLocation(section: .unpinned, index: 6)
+    )
+    XCTAssertNil(unpinnedItems.loadedPage(at: 1))
+    XCTAssertNotNil(unpinnedItems.loadedPage(at: 2))
+
+    let reloadedEndOfSecondPage = try await items.item(before: locatedStartOfThirdPage)
+    let locatedReloadedEndOfSecondPage = try XCTUnwrap(
+      reloadedEndOfSecondPage
+    )
+
+    XCTAssertEqual(locatedReloadedEndOfSecondPage.item.title, "5")
+    XCTAssertEqual(
+      locatedReloadedEndOfSecondPage.location,
+      locatedEndOfSecondPage.location
+    )
+    XCTAssertNotNil(unpinnedItems.loadedPage(at: 1))
+    XCTAssertNil(unpinnedItems.loadedPage(at: 2))
   }
 
   func testAppliesFilterBeforeSlicing() async throws {
@@ -186,14 +229,13 @@ final class PagedHistoryItemsTests: XCTestCase {
     let query = InMemoryHistoryQuery(titles: (0..<8).map(String.init))
     let items = PagedHistoryItems(
       pageSize: nil,
-      supportsBoundaryRangeSelection: true,
       loader: query.load
     )
 
     try items.load()
     let last = try await items.item(at: 7)
 
-    XCTAssertTrue(items.supportsBoundaryRangeSelection)
+    XCTAssertTrue(items.allowsSelectionExtensionToBoundary)
     XCTAssertEqual(items.pageCount, 1)
     XCTAssertEqual(items.retainedPageIndices, [0])
     XCTAssertEqual(
@@ -208,7 +250,7 @@ final class PagedHistoryItemsTests: XCTestCase {
     let adoptedDecorator = HistoryItemDecorator(query.item(titled: "pin"))
     let items = PagedHistoryItems(pageSize: 1, loader: query.load)
 
-    items.adopt([adoptedDecorator])
+    query.adopt(adoptedDecorator)
     try items.load()
     let secondPage = try items.loadPage(at: 1)
 
@@ -223,7 +265,7 @@ final class PagedHistoryItemsTests: XCTestCase {
 
   func testPublishesExactLayoutSummariesForUnloadedPages() throws {
     let query = InMemoryHistoryQuery(titles: (0..<8).map(String.init))
-    query.isAlternate = { ["1", "4", "7"].contains($0.title) }
+    query.hasImage = { ["1", "4", "7"].contains($0.title) }
     let items = PagedHistoryItems(pageSize: 3, loader: query.load)
 
     try items.load()
@@ -231,27 +273,86 @@ final class PagedHistoryItemsTests: XCTestCase {
     XCTAssertEqual(
       items.pageLayoutSummaries,
       [
-        HistoryPageLayoutSummary(itemCount: 3, alternateItemCount: 1),
-        HistoryPageLayoutSummary(itemCount: 3, alternateItemCount: 1),
-        HistoryPageLayoutSummary(itemCount: 2, alternateItemCount: 1)
+        HistoryPageLayoutSummary(itemCount: 3, imageItemCount: 1),
+        HistoryPageLayoutSummary(itemCount: 3, imageItemCount: 1),
+        HistoryPageLayoutSummary(itemCount: 2, imageItemCount: 1)
       ]
     )
     XCTAssertEqual(
       items.layoutSummary(forPageAt: 2)?
-        .height(itemHeight: 10, alternateItemHeight: 20),
+        .height(regularItemHeight: 10, imageItemHeight: 20),
       30
     )
     XCTAssertNil(items.loadedPage(at: 2))
+  }
+
+  func testStorageLayoutIndexPatchesRowsAcrossPageBoundaries() throws {
+    let index = try XCTUnwrap(
+      HistoryDataProvider.StorageLayoutIndex(
+        imageRows: [
+          false, true, false,
+          true, false, true,
+          false, true
+        ],
+        pageSize: 3
+      )
+    )
+
+    let updated = try XCTUnwrap(
+      index.applying(
+        removals: [
+          .init(index: 1, isImage: true),
+          .init(index: 5, isImage: true)
+        ],
+        insertions: [
+          .init(index: 0, isImage: true),
+          .init(index: 4, isImage: false)
+        ]
+      )
+    )
+
+    XCTAssertEqual(
+      updated.imageRows,
+      [true, false, false, true, false, false, false, true]
+    )
+    XCTAssertEqual(
+      updated.layoutSummaries,
+      [
+        HistoryPageLayoutSummary(itemCount: 3, imageItemCount: 1),
+        HistoryPageLayoutSummary(itemCount: 3, imageItemCount: 1),
+        HistoryPageLayoutSummary(itemCount: 2, imageItemCount: 1)
+      ]
+    )
+  }
+
+  func testStorageLayoutIndexRejectsStaleRowMetadata() throws {
+    let index = try XCTUnwrap(
+      HistoryDataProvider.StorageLayoutIndex(
+        imageRows: [false, true, false],
+        pageSize: 2
+      )
+    )
+
+    XCTAssertNil(
+      index.applying(
+        removals: [.init(index: 1, isImage: false)],
+        insertions: []
+      )
+    )
+    XCTAssertEqual(index.imageRows, [false, true, false])
   }
 }
 
 @MainActor
 private final class InMemoryHistoryQuery {
   var isIncluded: (HistoryItem) -> Bool = { _ in true }
-  var isAlternate: (HistoryItem) -> Bool = { _ in false }
+  var hasImage: (HistoryItem) -> Bool = { _ in false }
   var error: Error?
 
   private var items: [HistoryItem]
+  private var decorators: [
+    PersistentIdentifier: HistoryItemDecorator
+  ] = [:]
 
   init(titles: [String]) {
     items = titles.map { title in
@@ -275,6 +376,10 @@ private final class InMemoryHistoryQuery {
     items.first { $0.title == title }!
   }
 
+  func adopt(_ decorator: HistoryItemDecorator) {
+    decorators[decorator.item.persistentModelID] = decorator
+  }
+
   func load(
     _ request: PagedHistoryItems.QueryRequest
   ) throws -> PagedHistoryItems.QuerySnapshot {
@@ -288,9 +393,7 @@ private final class InMemoryHistoryQuery {
       let clampedRange = clamp(range, toCount: filteredItems.count)
       return PagedHistoryItems.QuerySlice(
         range: clampedRange,
-        items: filteredItems[clampedRange].map {
-          HistoryItemDecorator($0)
-        }
+        items: filteredItems[clampedRange].map(decorator)
       )
     }
     let layoutSummaries = request.includesLayoutSummaries
@@ -315,7 +418,7 @@ private final class InMemoryHistoryQuery {
       return [
         HistoryPageLayoutSummary(
           itemCount: items.count,
-          alternateItemCount: items.lazy.filter(isAlternate).count
+          imageItemCount: items.lazy.filter(hasImage).count
         )
       ]
     }
@@ -325,7 +428,7 @@ private final class InMemoryHistoryQuery {
       let pageItems = items[start..<end]
       return HistoryPageLayoutSummary(
         itemCount: pageItems.count,
-        alternateItemCount: pageItems.lazy.filter(isAlternate).count
+        imageItemCount: pageItems.lazy.filter(hasImage).count
       )
     }
   }
@@ -337,5 +440,17 @@ private final class InMemoryHistoryQuery {
     let lowerBound = min(max(0, range.lowerBound), count)
     let upperBound = min(max(lowerBound, range.upperBound), count)
     return lowerBound..<upperBound
+  }
+
+  private func decorator(
+    for item: HistoryItem
+  ) -> HistoryItemDecorator {
+    let modelID = item.persistentModelID
+    if let decorator = decorators[modelID] {
+      return decorator
+    }
+    let decorator = HistoryItemDecorator(item)
+    decorators[modelID] = decorator
+    return decorator
   }
 }

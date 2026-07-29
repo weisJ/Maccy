@@ -1,9 +1,15 @@
 import Foundation
+import SwiftData
 import SwiftUI
 
 struct HistoryScrollRequest: Equatable {
-  let id: UUID
-  let location: HistoryItemLocation
+  let requestID = UUID()
+  let modelID: PersistentIdentifier
+
+  init?(item: LocatedHistoryItem) {
+    guard item.location.section == .unpinned else { return nil }
+    modelID = item.item.item.persistentModelID
+  }
 }
 
 @Observable
@@ -24,8 +30,20 @@ class NavigationManager {
 
   var selection: Selection<HistoryItemDecorator> = Selection() {
     willSet {
-      selection.forEach { _, item in item.selectionIndex = -1 }
-      newValue.forEach { index, item in item.selectionIndex = index }
+      let newItems = Set(newValue.items.map(ObjectIdentifier.init))
+      selection.forEach { _, item in
+        if !newItems.contains(ObjectIdentifier(item)) {
+          item.selectionIndex = -1
+        }
+      }
+      newValue.forEach { index, item in
+        if item.selectionIndex != index {
+          item.selectionIndex = index
+        }
+      }
+    }
+    didSet {
+      updateMultiSelectState()
     }
   }
 
@@ -59,10 +77,12 @@ class NavigationManager {
     leadSelection != nil && leadSelection == history.pasteStack?.id
   }
 
-  var isManualMultiSelect: Bool = false
-  var isMultiSelectInProgress: Bool {
-    isManualMultiSelect || selection.count > 1
+  var isManualMultiSelect: Bool = false {
+    didSet {
+      updateMultiSelectState()
+    }
   }
+  private(set) var isMultiSelectInProgress = false
 
   var hoverSelectionWhileKeyboardNavigating: UUID?
   @MainActor
@@ -85,6 +105,7 @@ class NavigationManager {
 
   func requestScroll(to item: HistoryItemDecorator) {
     guard let locatedItem = history.historyItems.loadedItem(id: item.id) else {
+      scrollRequest = nil
       return
     }
     if leadHistoryItem?.id == locatedItem.item.id {
@@ -162,12 +183,12 @@ class NavigationManager {
   func nearestUnselectedItem(
     beforeDeleting items: [HistoryItemDecorator]
   ) async -> LocatedHistoryItem? {
-    guard let leadHistoryLocation = resolveLeadHistoryItem()?.location else {
+    guard let leadHistoryItem = await resolveLeadHistoryItem() else {
       return nil
     }
     let selectedIDs = Set(items.map(\.id))
     return try? await history.historyItems.nearest(
-      to: leadHistoryLocation,
+      to: leadHistoryItem,
       where: { !selectedIDs.contains($0.id) }
     )
   }
@@ -205,22 +226,54 @@ class NavigationManager {
     footer.selectedItem = nil
   }
 
-  func resolveLeadHistoryItem() -> LocatedHistoryItem? {
+  @MainActor
+  func resolveLeadHistoryItem() async -> LocatedHistoryItem? {
     guard let leadHistoryItem else { return nil }
-    guard let resolved = history.historyItems.loadedItem(
-      id: leadHistoryItem.id
-    ) else {
-      return nil
+    if let resolved = history.historyItems.loadedItem(id: leadHistoryItem.id) {
+      self.leadHistoryItem = resolved.item
+      return resolved
     }
-    self.leadHistoryItem = resolved.item
-    return resolved
+    if let resolved = try? await history.historyItems.resolve(leadHistoryItem) {
+      self.leadHistoryItem = resolved.item
+      return resolved
+    }
+    return nil
+  }
+
+  @MainActor
+  func reconcileSelectionAfterHistoryChange() {
+    let resolvedItems = selection.items.compactMap { item in
+      if let loadedItem = history.historyItems.loadedItem(id: item.id) {
+        return loadedItem.item
+      }
+      if let loadedItem = history.historyItems.loadedItem(
+        modelID: item.item.persistentModelID
+      ) {
+        return loadedItem.item
+      }
+      return history.historyItems.contains(item) ? item : nil
+    }
+    selection = Selection(items: resolvedItems)
+
+    guard let leadHistoryItem else { return }
+    if let resolved = history.historyItems.loadedItem(
+      id: leadHistoryItem.id
+    ) {
+      self.leadHistoryItem = resolved.item
+      return
+    }
+    if let resolved = history.historyItems.loadedItem(
+      modelID: leadHistoryItem.item.persistentModelID
+    ) {
+      self.leadHistoryItem = resolved.item
+    } else if !history.historyItems.contains(leadHistoryItem) {
+      self.leadHistoryItem = resolvedItems.last
+      scrollRequest = nil
+    }
   }
 
   func requestScroll(to item: LocatedHistoryItem) {
-    scrollRequest = HistoryScrollRequest(
-      id: item.item.id,
-      location: item.location
-    )
+    scrollRequest = HistoryScrollRequest(item: item)
   }
 
   @MainActor
@@ -237,6 +290,13 @@ class NavigationManager {
       } else {
         scrollRequest = nil
       }
+    }
+  }
+
+  private func updateMultiSelectState() {
+    let newValue = isManualMultiSelect || selection.count > 1
+    if isMultiSelectInProgress != newValue {
+      isMultiSelectInProgress = newValue
     }
   }
 }

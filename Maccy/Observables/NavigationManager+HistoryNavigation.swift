@@ -13,8 +13,8 @@ extension NavigationManager {
     if isRange {
       do {
         let range = try await history.historyItems.range(
-          from: from.location,
-          through: destination.location
+          from: from,
+          through: destination
         )
         guard isNavigationCurrent(generation), !range.isEmpty else { return }
         newSelection = Selection(items: range.map(\.item))
@@ -47,6 +47,15 @@ extension NavigationManager {
       await previousTask?.value
       guard let self, self.isNavigationCurrent(generation) else { return }
       await operation(self, generation)
+    }
+  }
+
+  func performAfterPendingNavigation(
+    _ operation: @escaping @MainActor () -> Void
+  ) {
+    enqueueNavigation { navigator, generation in
+      guard navigator.isNavigationCurrent(generation) else { return }
+      operation()
     }
   }
 
@@ -121,14 +130,18 @@ extension NavigationManager {
   }
 
   func extendHighlightToFirst() {
-    guard history.historyItems.supportsBoundaryRangeSelection else { return }
+    guard history.historyItems.allowsSelectionExtensionToBoundary else {
+      return
+    }
     enqueueNavigation { navigator, generation in
       await navigator.performExtendHighlightToFirst(generation: generation)
     }
   }
 
   func extendHighlightToLast() {
-    guard history.historyItems.supportsBoundaryRangeSelection else { return }
+    guard history.historyItems.allowsSelectionExtensionToBoundary else {
+      return
+    }
     enqueueNavigation { navigator, generation in
       await navigator.performExtendHighlightToLast(generation: generation)
     }
@@ -150,8 +163,10 @@ extension NavigationManager {
       }
 
       navigator.history.delete(itemsToDelete)
-      let nextLoadedItem = nextItem.flatMap {
-        navigator.history.historyItems.loadedItem(id: $0.item.id)
+      let nextLoadedItem: LocatedHistoryItem? = if let nextItem {
+        try? await navigator.history.historyItems.resolve(nextItem.item)
+      } else {
+        nil
       }
       navigator.selectFromKeyboardNavigation(item: nextLoadedItem)
     }
@@ -161,7 +176,7 @@ extension NavigationManager {
   private func performHighlightPrevious(generation: UInt) async {
     guard leadSelection != nil else { return }
 
-    if let lead = resolveLeadHistoryItem() {
+    if let lead = await resolveLeadHistoryItem() {
       await highlightItemBefore(lead, generation: generation)
     } else if let footerItem = footer.selectedItem {
       await highlightItemBefore(footerItem, generation: generation)
@@ -174,7 +189,7 @@ extension NavigationManager {
     generation: UInt
   ) async {
     do {
-      let previous = try await history.historyItems.item(before: lead.location)
+      let previous = try await history.historyItems.item(before: lead)
       guard isNavigationCurrent(generation) else { return }
       if let previous {
         selectFromKeyboardNavigation(item: previous)
@@ -217,7 +232,7 @@ extension NavigationManager {
 
     if pasteStackSelected {
       await highlightFirstHistoryItem(generation: generation)
-    } else if let lead = resolveLeadHistoryItem() {
+    } else if let lead = await resolveLeadHistoryItem() {
       await highlightItemAfter(
         lead,
         allowCycle: allowCycle,
@@ -239,7 +254,7 @@ extension NavigationManager {
     generation: UInt
   ) async {
     do {
-      let next = try await history.historyItems.item(after: lead.location)
+      let next = try await history.historyItems.item(after: lead)
       guard isNavigationCurrent(generation) else { return }
       if let next {
         selectFromKeyboardNavigation(item: next)
@@ -283,11 +298,12 @@ extension NavigationManager {
   private func performHighlightLast(generation: UInt) async {
     guard leadSelection != nil else { return }
 
-    if let lead = resolveLeadHistoryItem() {
+    if let lead = await resolveLeadHistoryItem() {
       do {
         let lastItem = try await history.historyItems.last()
         guard isNavigationCurrent(generation) else { return }
-        if lead.location == lastItem?.location,
+        if lead.revision == lastItem?.revision,
+           lead.location == lastItem?.location,
            let footerItem = footer.firstVisibleItem {
           selectFromKeyboardNavigation(footerItem: footerItem)
         } else {
@@ -305,7 +321,7 @@ extension NavigationManager {
 
   @MainActor
   private func performExtendHighlightToNext(generation: UInt) async {
-    guard let lead = resolveLeadHistoryItem() else {
+    guard let lead = await resolveLeadHistoryItem() else {
       await performHighlightNext(
         allowCycle: false,
         generation: generation
@@ -314,7 +330,7 @@ extension NavigationManager {
     }
     let nextItem: LocatedHistoryItem?
     do {
-      nextItem = try await history.historyItems.item(after: lead.location)
+      nextItem = try await history.historyItems.item(after: lead)
     } catch {
       return
     }
@@ -329,14 +345,14 @@ extension NavigationManager {
 
   @MainActor
   private func performExtendHighlightToPrevious(generation: UInt) async {
-    guard let lead = resolveLeadHistoryItem() else {
+    guard let lead = await resolveLeadHistoryItem() else {
       await performHighlightPrevious(generation: generation)
       return
     }
     let previousItem: LocatedHistoryItem?
     do {
       previousItem = try await history.historyItems.item(
-        before: lead.location
+        before: lead
       )
     } catch {
       return
@@ -359,7 +375,7 @@ extension NavigationManager {
       return
     }
     guard isNavigationCurrent(generation) else { return }
-    guard let lead = resolveLeadHistoryItem(), let firstItem else {
+    guard let lead = await resolveLeadHistoryItem(), let firstItem else {
       selectFromKeyboardNavigation(item: firstItem)
       return
     }
@@ -380,7 +396,7 @@ extension NavigationManager {
       return
     }
     guard isNavigationCurrent(generation) else { return }
-    guard let lead = resolveLeadHistoryItem(), let lastItem else {
+    guard let lead = await resolveLeadHistoryItem(), let lastItem else {
       selectFromKeyboardNavigation(item: lastItem)
       return
     }

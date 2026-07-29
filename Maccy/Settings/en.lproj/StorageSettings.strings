@@ -5,6 +5,8 @@
 "Text" = "Text";
 "SaveDescription" = "Change what types of copied content should be stored.";
 "Size" = "Size:";
+"UnlimitedHistory" = "Unlimited history";
+"UnlimitedHistoryNotice" = "Items are loaded on demand to keep memory use bounded. Multi-selection can cross page boundaries one item at a time. Select All and extending a selection directly to the first or last item are unavailable; moving to the first or last item still works.";
 "SizeTooltip" = "Number of history items to keep.\nDefault: 200.";
 "CurrentSizeTooltip" = "Current size on disk.";
 "SortBy" = "Sort by:";

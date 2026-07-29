@@ -2,47 +2,73 @@ import Defaults
 import SwiftUI
 
 struct HistoryListView: View {
-  @Binding var searchQuery: String
   @FocusState.Binding var searchFocused: Bool
 
   @Environment(AppState.self) private var appState
   @Environment(ModifierFlags.self) private var modifierFlags
+  @Environment(\.layoutDirection) private var layoutDirection
   @Environment(\.scenePhase) private var scenePhase
 
+  @Default(.imageMaxHeight) private var imageMaxHeight
   @Default(.pinTo) private var pinTo
-  @Default(.previewDelay) private var previewDelay
+  @Default(.showApplicationIcons) private var showApplicationIcons
   @Default(.showFooter) private var showFooter
 
   private var pinnedItems: [HistoryItemDecorator] {
     appState.history.pinnedItems
   }
-  private var unpinnedItems: [HistoryItemDecorator] {
-    appState.history.unpinnedItems.items
-  }
-  private var showPinsSeparator: Bool {
-    pinsVisible && !unpinnedItems.isEmpty
-  }
 
   private var pinsVisible: Bool {
-    return !pinnedItems.isEmpty
+    !pinnedItems.isEmpty
   }
 
   private var pasteStackVisible: Bool {
-    if let stack = appState.history.pasteStack,
-       !stack.items.isEmpty {
-      return true
-    }
-    return false
+    guard let stack = appState.history.pasteStack else { return false }
+    return !stack.items.isEmpty
+  }
+
+  private var regularItemHeight: CGFloat {
+    ListItemMetrics.minimumHeight(
+      showsApplicationIcon: showApplicationIcons
+    )
+  }
+
+  private var imageItemHeight: CGFloat {
+    max(
+      regularItemHeight,
+      CGFloat(imageMaxHeight)
+        + 2 * ListItemMetrics.verticalContentPadding
+    )
   }
 
   private var topPadding: CGFloat {
-    return Popup.verticalSeparatorPadding
+    Popup.verticalSeparatorPadding
   }
 
   private var bottomPadding: CGFloat {
-    return showFooter
+    showFooter
       ? Popup.verticalSeparatorPadding
       : (Popup.verticalSeparatorPadding - 1)
+  }
+
+  private func rowHeight(
+    for item: HistoryItemDecorator
+  ) -> CGFloat {
+    item.hasImage ? imageItemHeight : regularItemHeight
+  }
+
+  private func contentHeight(
+    topPadding: CGFloat,
+    bottomPadding: CGFloat
+  ) -> CGFloat {
+    appState.history.unpinnedItems.pageLayoutSummaries.reduce(
+      topPadding + bottomPadding
+    ) {
+      $0 + $1.height(
+        regularItemHeight: regularItemHeight,
+        imageItemHeight: imageItemHeight
+      )
+    }
   }
 
   private func topSeparator() -> some View {
@@ -70,8 +96,17 @@ struct HistoryListView: View {
     let bottomPinsVisible = pinTo == .bottom && pinsVisible
     let topSeparatorVisible = topPinsVisible || pasteStackVisible
     let bottomSeparatorVisible = bottomPinsVisible
-    let scrollTopPadding = topSeparatorVisible ? Popup.verticalSeparatorPadding : topPadding
-    let scrollBottomPadding = bottomSeparatorVisible ? Popup.verticalSeparatorPadding : bottomPadding
+    let scrollTopPadding = topSeparatorVisible
+      ? Popup.verticalSeparatorPadding
+      : topPadding
+    let scrollBottomPadding = bottomSeparatorVisible
+      ? Popup.verticalSeparatorPadding
+      : bottomPadding
+    let scrollRequest = appState.navigator.scrollRequest
+    let scrollContentHeight = contentHeight(
+      topPadding: scrollTopPadding,
+      bottomPadding: scrollBottomPadding
+    )
 
     VStack(spacing: 0) {
       if let stack = appState.history.pasteStack,
@@ -93,57 +128,71 @@ struct HistoryListView: View {
     }
     .padding(.top, topSeparatorVisible ? topPadding : 0)
     .readHeight(appState, into: \.popup.extraTopHeight)
+    .onChange(of: appState.popup.extraTopHeight) {
+      appState.popup.needsResize = true
+    }
 
-    ScrollView {
-      ScrollViewReader { proxy in
-        MultipleSelectionListView(items: unpinnedItems) { previous, item, next, index in
-          HistoryItemView(item: item, previous: previous, next: next, index: index)
-        }
-        .padding(.top, scrollTopPadding)
-        .padding(.bottom, scrollBottomPadding)
-        .task(id: appState.navigator.scrollRequest) {
-          guard appState.navigator.scrollRequest != nil else { return }
-
-          try? await Task.sleep(for: .milliseconds(10))
-          guard !Task.isCancelled else { return }
-
-          if let request = appState.navigator.scrollRequest {
-            proxy.scrollTo(request.id)
-            appState.navigator.scrollRequest = nil
-          }
-        }
-        .onChange(of: scenePhase) {
-          if scenePhase == .active {
-            searchFocused = true
-            appState.navigator.isKeyboardNavigating = true
-            appState.navigator.highlightFirstUnpinned()
-            appState.preview.enableAutoOpen()
-            appState.preview.resetAutoOpenSuppression()
-            appState.preview.startAutoOpen()
-          } else {
-            modifierFlags.flags = []
-            appState.navigator.isKeyboardNavigating = true
-            appState.preview.cancelAutoOpen()
-          }
-        }
-        // Calculate the total height inside a scroll view.
-        .background {
-          GeometryReader { geo in
-            Color.clear
-              .task(id: appState.popup.needsResize) {
-                try? await Task.sleep(for: .milliseconds(10))
-                guard !Task.isCancelled else { return }
-
-                if appState.popup.needsResize {
-                  appState.popup.resize(height: geo.size.height)
-                }
-              }
-          }
-        }
+    PagedHistoryScrollView(
+      historyItems: appState.history.unpinnedItems,
+      regularItemHeight: regularItemHeight,
+      imageItemHeight: imageItemHeight,
+      rowHeightProvider: rowHeight(for:),
+      scrollTargetModelID: scrollRequest?.modelID,
+      scrollRequestID: scrollRequest?.requestID,
+      contentInsets: EdgeInsets(
+        top: scrollTopPadding,
+        leading: 0,
+        bottom: scrollBottomPadding,
+        trailing: 0
+      ),
+      scrollIndicatorInsets: EdgeInsets(
+        top: scrollTopPadding,
+        leading: 10,
+        bottom: scrollBottomPadding,
+        trailing: 0
+      )
+    ) { page in
+      MultipleSelectionListView(
+        items: page.items,
+        itemBeforeFirst: page.previousItem,
+        itemAfterLast: page.nextItem
+      ) { previous, item, next in
+        HistoryItemView(
+          item: item,
+          previous: previous,
+          next: next
+        )
+        .frame(height: rowHeight(for: item))
       }
-      .contentMargins(.leading, 10, for: .scrollIndicators)
-      .contentMargins(.top, scrollTopPadding, for: .scrollIndicators)
-      .contentMargins(.bottom, scrollBottomPadding, for: .scrollIndicators)
+      // NSHostingView starts a new SwiftUI root for each recycled page.
+      .environment(appState)
+      .environment(modifierFlags)
+      .environment(\.layoutDirection, layoutDirection)
+    }
+    .task(id: scrollContentHeight) {
+      try? await Task.sleep(for: .milliseconds(10))
+      guard !Task.isCancelled else { return }
+      appState.popup.resize(height: scrollContentHeight)
+    }
+    .task(id: appState.popup.needsResize) {
+      guard appState.popup.needsResize else { return }
+      try? await Task.sleep(for: .milliseconds(10))
+      guard !Task.isCancelled else { return }
+      appState.popup.resize(height: scrollContentHeight)
+    }
+    .onChange(of: scenePhase) {
+      if scenePhase == .active {
+        searchFocused = true
+        appState.navigator.isKeyboardNavigating = true
+        appState.navigator.highlightFirstUnpinned()
+        appState.preview.enableAutoOpen()
+        appState.preview.resetAutoOpenSuppression()
+        appState.preview.startAutoOpen()
+      } else {
+        modifierFlags.flags = []
+        appState.navigator.isKeyboardNavigating = true
+        appState.preview.cancelAutoOpen()
+      }
     }
 
     VStack(spacing: 0) {
@@ -157,5 +206,8 @@ struct HistoryListView: View {
     }
     .padding(.bottom, bottomSeparatorVisible ? bottomPadding : 0)
     .readHeight(appState, into: \.popup.extraBottomHeight)
+    .onChange(of: appState.popup.extraBottomHeight) {
+      appState.popup.needsResize = true
+    }
   }
 }

@@ -8,8 +8,6 @@ import SwiftUI
 class AppState: Sendable {
   static let shared = AppState(history: History.shared, footer: Footer())
 
-  let multiSelectionEnabled = false
-
   var appDelegate: AppDelegate?
   var popup: Popup
   var history: History
@@ -26,7 +24,8 @@ class AppState: Sendable {
   }
 
   var menuIconText: String {
-    var title = history.unpinnedItems.items.first?.text.shortened(to: 100)
+    var title = history.unpinnedItems.loadedPage(at: 0)?
+      .items.first?.text.shortened(to: 100)
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     title.unicodeScalars.removeAll(where: CharacterSet.newlines.contains)
     return title.shortened(to: 20)

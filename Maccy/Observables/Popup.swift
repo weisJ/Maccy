@@ -165,7 +165,7 @@ class Popup {
   private func handleFlagsChanged(_ event: NSEvent) -> NSEvent? {
     // If we are in cycle mode, releasing modifiers triggers a selection
     if state == .cycle && allModifiersReleased(event) {
-      DispatchQueue.main.async {
+      AppState.shared.navigator.performAfterPendingNavigation {
         AppState.shared.select()
       }
       return nil

@@ -5,24 +5,24 @@ import SwiftData
 
 struct HistoryPageLayoutSummary: Equatable {
   let itemCount: Int
-  let alternateItemCount: Int
+  let imageItemCount: Int
 
-  init(itemCount: Int, alternateItemCount: Int = 0) {
+  init(itemCount: Int, imageItemCount: Int = 0) {
     precondition(itemCount >= 0)
     precondition(
-      alternateItemCount >= 0 && alternateItemCount <= itemCount
+      imageItemCount >= 0 && imageItemCount <= itemCount
     )
     self.itemCount = itemCount
-    self.alternateItemCount = alternateItemCount
+    self.imageItemCount = imageItemCount
   }
 
   func height(
-    itemHeight: CGFloat,
-    alternateItemHeight: CGFloat
+    regularItemHeight: CGFloat,
+    imageItemHeight: CGFloat
   ) -> CGFloat {
-    let regularItemCount = itemCount - alternateItemCount
-    return CGFloat(regularItemCount) * itemHeight
-      + CGFloat(alternateItemCount) * alternateItemHeight
+    let regularItemCount = itemCount - imageItemCount
+    return CGFloat(regularItemCount) * regularItemHeight
+      + CGFloat(imageItemCount) * imageItemHeight
   }
 }
 
@@ -114,9 +114,7 @@ final class PagedHistoryPage: Identifiable {
 
 /// A packed view of the active unpinned-history query.
 ///
-/// Passing `pageSize: nil` creates one resident page. Selection capabilities
-/// are configured independently, because they describe product policy rather
-/// than the current storage representation.
+/// Passing `pageSize: nil` creates one resident page.
 @Observable
 final class PagedHistoryItems: UnpinnedHistoryItems {
   struct QueryRequest {
@@ -136,7 +134,9 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
   /// with the request ranges and use those ranges clamped to
   /// `0..<filteredCount`. Full loads and mutation refreshes also request exact
   /// layout summaries for every page, including pages whose items are not
-  /// retained.
+  /// retained. The loader owns decorator identity and must return the same
+  /// decorator object for the same persistent model across overlapping slices
+  /// and subsequent requests.
   struct QuerySnapshot {
     let filteredCount: Int
     let slices: [QuerySlice]
@@ -156,6 +156,9 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
   typealias QueryLoader = @MainActor (
     _ request: QueryRequest
   ) throws -> QuerySnapshot
+  typealias IndexLoader = @MainActor (
+    _ modelID: PersistentIdentifier
+  ) throws -> Int?
 
   enum LoadingError: LocalizedError {
     case invalidSnapshot(String)
@@ -170,7 +173,9 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
 
   /// `nil` means the query is kept in one resident page.
   let pageSize: Int?
-  let supportsBoundaryRangeSelection: Bool
+  var allowsSelectionExtensionToBoundary: Bool {
+    pageSize == nil
+  }
 
   private(set) var count = 0
   private(set) var pages: [Int: PagedHistoryPage] = [:]
@@ -205,13 +210,9 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
     }
   }
 
-  /// Items currently retained by the source, in global query order.
-  var items: [HistoryItemDecorator] {
-    loadedItems.sorted { $0.index < $1.index }.map(\.item)
-  }
-
   private let maximumUnleasedPageCount: Int
-  private let loader: QueryLoader
+  private var loader: QueryLoader
+  private var indexLoader: IndexLoader?
 
   @ObservationIgnored
   private var pageLeaseCounts: [Int: Int] = [:]
@@ -223,17 +224,12 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
   private var lastAccess: [Int: UInt64] = [:]
 
   @ObservationIgnored
-  private var decoratorCache: [
-    PersistentIdentifier: WeakHistoryItemDecorator
-  ] = [:]
-
-  @ObservationIgnored
   private var knownItemsByID: [UUID: WeakIndexedHistoryItem] = [:]
 
   init(
     pageSize: Int? = 20,
-    supportsBoundaryRangeSelection: Bool = false,
     maximumUnleasedPageCount: Int = 3,
+    indexLoader: IndexLoader? = nil,
     loader: @escaping QueryLoader
   ) {
     if let pageSize {
@@ -247,23 +243,9 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
       "Paged history cache must retain at least its first page"
     )
     self.pageSize = pageSize
-    self.supportsBoundaryRangeSelection = supportsBoundaryRangeSelection
     self.maximumUnleasedPageCount = maximumUnleasedPageCount
+    self.indexLoader = indexLoader
     self.loader = loader
-  }
-
-  /// Seeds canonical identity with decorators owned outside the page cache.
-  ///
-  /// This is needed when a pin is unpinned: its existing decorator may be
-  /// selected, so the first storage fetch must adopt that object instead of
-  /// creating a second wrapper for the same model.
-  @MainActor
-  func adopt(_ decorators: some Sequence<HistoryItemDecorator>) {
-    for decorator in decorators {
-      decoratorCache[decorator.item.persistentModelID] =
-        WeakHistoryItemDecorator(decorator)
-    }
-    pruneDecoratorCache()
   }
 
   /// Records the current query location of an externally owned decorator.
@@ -272,7 +254,6 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
   /// navigation can still target it without retaining every preceding item.
   @MainActor
   func remember(_ decorator: HistoryItemDecorator, at index: Int) {
-    adopt([decorator])
     register(decorator, at: index)
   }
 
@@ -284,11 +265,26 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
 
   @MainActor
   func reload() throws {
+    try reload(indexLoader: indexLoader, loader: loader)
+  }
+
+  /// Stages a complete query refresh before installing its accessors.
+  ///
+  /// If loading fails, the previous query and its published pages remain
+  /// usable.
+  @MainActor
+  func reload(
+    indexLoader: IndexLoader?,
+    loader: @escaping QueryLoader
+  ) throws {
     let pageIndices = Set(pages.keys).union([0])
     try replaceQuery(
       retaining: pageIndices,
-      forceContentRevisions: hasLoaded
+      forceContentRevisions: hasLoaded,
+      using: loader
     )
+    self.indexLoader = indexLoader
+    self.loader = loader
   }
 
   /// Atomically re-fetches, packs, and publishes every retained page.
@@ -298,8 +294,26 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
   /// return with all hosted pages already backfilled.
   @MainActor
   func refreshAfterMutation() throws {
+    try refreshAfterMutation(
+      indexLoader: indexLoader,
+      loader: loader
+    )
+  }
+
+  /// Re-packs retained pages against a newly prepared storage query and
+  /// installs that query only after every requested slice has loaded.
+  @MainActor
+  func refreshAfterMutation(
+    indexLoader: IndexLoader?,
+    loader: @escaping QueryLoader
+  ) throws {
     let pageIndices = Set(pages.keys).union([0])
-    try refreshRetainedPages(including: pageIndices)
+    try refreshRetainedPages(
+      including: pageIndices,
+      using: loader
+    )
+    self.indexLoader = indexLoader
+    self.loader = loader
   }
 
   @MainActor
@@ -308,7 +322,8 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
     if !hasLoaded {
       try replaceQuery(
         retaining: [pageIndex(containing: index)],
-        forceContentRevisions: false
+        forceContentRevisions: false,
+        using: loader
       )
     }
     guard index < count,
@@ -324,6 +339,19 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
       )
     }
     return IndexedHistoryItem(item: page.items[localIndex], index: index)
+  }
+
+  @MainActor
+  func last() async throws -> IndexedHistoryItem? {
+    if !hasLoaded {
+      try replaceQuery(
+        retaining: [0],
+        forceContentRevisions: false,
+        using: loader
+      )
+    }
+    guard count > 0 else { return nil }
+    return try await item(at: count - 1)
   }
 
   func loadedItem(id: UUID) -> IndexedHistoryItem? {
@@ -344,6 +372,36 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
   }
 
   @MainActor
+  func index(of modelID: PersistentIdentifier) throws -> Int? {
+    for page in retainedPages {
+      if let localIndex = page.items.firstIndex(where: {
+        $0.item.persistentModelID == modelID
+      }) {
+        return page.startIndex + localIndex
+      }
+    }
+    return try indexLoader?(modelID)
+  }
+
+  @MainActor
+  func contains(modelID: PersistentIdentifier) throws -> Bool {
+    try index(of: modelID) != nil
+  }
+
+  @MainActor
+  func resolve(
+    modelID: PersistentIdentifier
+  ) async throws -> IndexedHistoryItem? {
+    guard let index = try index(of: modelID),
+          let item = try await item(at: index),
+          item.item.item.persistentModelID == modelID
+    else {
+      return nil
+    }
+    return item
+  }
+
+  @MainActor
   func loadPage(at pageIndex: Int) throws -> PagedHistoryPage? {
     guard isRepresentable(pageIndex: pageIndex) else { return nil }
     if let page = pages[pageIndex] {
@@ -353,7 +411,8 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
     if !hasLoaded {
       try replaceQuery(
         retaining: [pageIndex],
-        forceContentRevisions: false
+        forceContentRevisions: false,
+        using: loader
       )
       return pages[pageIndex]
     }
@@ -367,7 +426,8 @@ final class PagedHistoryItems: UnpinnedHistoryItems {
     let snapshot = try loader(request)
     if snapshot.filteredCount != count {
       try refreshRetainedPages(
-        including: Set(pages.keys).union([pageIndex])
+        including: Set(pages.keys).union([pageIndex]),
+        using: loader
       )
       return pages[pageIndex]
     }
@@ -444,7 +504,8 @@ private extension PagedHistoryItems {
   @MainActor
   func replaceQuery(
     retaining pageIndices: Set<Int>,
-    forceContentRevisions: Bool
+    forceContentRevisions: Bool,
+    using loader: QueryLoader
   ) throws {
     let indices = normalizedPageIndices(pageIndices)
     let request = QueryRequest(
@@ -475,7 +536,8 @@ private extension PagedHistoryItems {
 
   @MainActor
   func refreshRetainedPages(
-    including pageIndices: Set<Int>
+    including pageIndices: Set<Int>,
+    using loader: QueryLoader
   ) throws {
     let indices = normalizedPageIndices(pageIndices)
     let request = QueryRequest(
@@ -535,11 +597,10 @@ private extension PagedHistoryItems {
         continue
       }
 
-      let canonicalItems = slice.items.map(canonicalDecorator)
       let firstLocalIndex = pageRange.lowerBound - slice.range.lowerBound
       let lastLocalIndex = pageRange.upperBound - slice.range.lowerBound
       guard firstLocalIndex >= 0,
-        lastLocalIndex <= canonicalItems.count
+        lastLocalIndex <= slice.items.count
       else {
         throw LoadingError.invalidSnapshot(
           "page \(pageIndex) does not contain its complete packed range"
@@ -548,17 +609,16 @@ private extension PagedHistoryItems {
 
       stagedPages[pageIndex] = StagedPage(
         startIndex: pageRange.lowerBound,
-        items: Array(canonicalItems[firstLocalIndex..<lastLocalIndex]),
+        items: Array(slice.items[firstLocalIndex..<lastLocalIndex]),
         previousItem: pageRange.lowerBound > 0
-          ? canonicalItems[firstLocalIndex - 1]
+          ? slice.items[firstLocalIndex - 1]
           : nil,
         nextItem: pageRange.upperBound < snapshot.filteredCount
-          ? canonicalItems[lastLocalIndex]
+          ? slice.items[lastLocalIndex]
           : nil,
         layoutSummary: layoutSummaries[pageIndex]
       )
     }
-    pruneDecoratorCache()
     return stagedPages
   }
 
@@ -619,20 +679,6 @@ private extension PagedHistoryItems {
     return summaries
   }
 
-  func canonicalDecorator(
-    _ candidate: HistoryItemDecorator
-  ) -> HistoryItemDecorator {
-    let modelID = candidate.item.persistentModelID
-    if let cached = decoratorCache[modelID]?.value {
-      if cached !== candidate,
-         cached.attributedTitle != candidate.attributedTitle {
-        cached.attributedTitle = candidate.attributedTitle
-      }
-      return cached
-    }
-    decoratorCache[modelID] = WeakHistoryItemDecorator(candidate)
-    return candidate
-  }
 }
 
 private extension PagedHistoryItems {
@@ -806,13 +852,6 @@ private extension PagedHistoryItems {
     contentRevision &+= 1
   }
 
-  func pruneDecoratorCache() {
-    guard decoratorCache.count > 2 * max(pageSize ?? count, 20) else {
-      return
-    }
-    decoratorCache = decoratorCache.filter { $0.value.value != nil }
-  }
-
   static func clamp(
     _ range: Range<Int>,
     toCount count: Int
@@ -820,14 +859,6 @@ private extension PagedHistoryItems {
     let lowerBound = min(max(0, range.lowerBound), count)
     let upperBound = min(max(lowerBound, range.upperBound), count)
     return lowerBound..<upperBound
-  }
-}
-
-private final class WeakHistoryItemDecorator {
-  weak var value: HistoryItemDecorator?
-
-  init(_ value: HistoryItemDecorator) {
-    self.value = value
   }
 }
 

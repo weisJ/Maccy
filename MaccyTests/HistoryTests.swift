@@ -7,27 +7,29 @@ class HistoryTests: XCTestCase {
   let savedSize = Defaults[.size]
   let savedSortBy = Defaults[.sortBy]
   let savedPinTo = Defaults[.pinTo]
+  let savedUnlimitedHistory = Defaults[.isUnlimitedHistory]
   let history = History.shared
 
   var displayedItems: [HistoryItemDecorator] {
-    Defaults[.pinTo] == .top
-      ? history.pinnedItems + history.unpinnedItems.items
-      : history.unpinnedItems.items + history.pinnedItems
+    history.historyItems.loadedItems.map(\.item)
   }
 
-  override func setUp() {
-    super.setUp()
-    history.clearAll()
+  override func setUp() async throws {
+    try await super.setUp()
     Defaults[.size] = 10
     Defaults[.sortBy] = .firstCopiedAt
     Defaults[.pinTo] = .top
+    await setUnlimitedHistory(false)
+    history.clearAll()
   }
 
-  override func tearDown() {
-    super.tearDown()
+  override func tearDown() async throws {
+    history.clearAll()
     Defaults[.size] = savedSize
     Defaults[.sortBy] = savedSortBy
     Defaults[.pinTo] = savedPinTo
+    await setUnlimitedHistory(savedUnlimitedHistory)
+    try await super.tearDown()
   }
 
   func testDefaultIsEmpty() {
@@ -247,6 +249,57 @@ class HistoryTests: XCTestCase {
     XCTAssertFalse(displayedItems.contains(items[5]))
   }
 
+  func testSwitchingToLimitedHistoryAppliesRetention() async {
+    await setUnlimitedHistory(true)
+    var items: [HistoryItemDecorator] = []
+    for index in 0...20 {
+      let item = historyItem(String(index))
+      let copiedAt = Date(
+        timeIntervalSinceReferenceDate: TimeInterval(index)
+      )
+      item.firstCopiedAt = copiedAt
+      item.lastCopiedAt = copiedAt
+      items.append(history.add(item))
+    }
+
+    XCTAssertEqual(history.unpinnedItems.pageSize, 20)
+    XCTAssertEqual(history.unpinnedItems.count, 21)
+    XCTAssertEqual(history.unpinnedItems.pageCount, 2)
+    XCTAssertFalse(
+      history.historyItems.allowsSelectionExtensionToBoundary
+    )
+
+    await setUnlimitedHistory(false)
+
+    XCTAssertNil(history.unpinnedItems.pageSize)
+    XCTAssertEqual(history.unpinnedItems.count, 10)
+    XCTAssertEqual(history.unpinnedItems.pageCount, 1)
+    XCTAssertEqual(history.unpinnedItems.loadedItems.count, 10)
+    XCTAssertTrue(
+      history.historyItems.allowsSelectionExtensionToBoundary
+    )
+    let retainedItems = history.unpinnedItems.loadedItems.map(\.item)
+    XCTAssertTrue(retainedItems.contains(items[20]))
+    XCTAssertFalse(retainedItems.contains(items[0]))
+  }
+
+  func testMutationInvalidatesLocatedHistoryItem() async throws {
+    let first = history.add(historyItem("first"))
+    history.add(historyItem("second"))
+    let locatedFirst = try XCTUnwrap(
+      history.historyItems.loadedItem(id: first.id)
+    )
+
+    history.add(historyItem("third"))
+
+    do {
+      _ = try await history.historyItems.item(after: locatedFirst)
+      XCTFail("Expected mutation to invalidate the old history location")
+    } catch HistoryItemsError.staleLocation {
+      // Expected.
+    }
+  }
+
   func testRemoving() {
     let foo = history.add(historyItem("foo"))
     let bar = history.add(historyItem("bar"))
@@ -261,7 +314,10 @@ class HistoryTests: XCTestCase {
     history.togglePin(first)
 
     XCTAssertEqual(history.pinnedItems, [first])
-    XCTAssertEqual(history.unpinnedItems.items, [second])
+    XCTAssertEqual(
+      history.unpinnedItems.loadedItems.map(\.item),
+      [second]
+    )
     XCTAssertEqual(displayedItems, [first, second])
 
     Defaults[.pinTo] = .bottom
@@ -283,5 +339,19 @@ class HistoryTests: XCTestCase {
     item.title = item.generateTitle()
 
     return item
+  }
+
+  private func setUnlimitedHistory(_ enabled: Bool) async {
+    Defaults[.isUnlimitedHistory] = enabled
+    let expectedPageSize: Int? = enabled ? 20 : nil
+    for _ in 0..<200 {
+      if history.unpinnedItems.pageSize == expectedPageSize {
+        return
+      }
+      try? await Task.sleep(for: .milliseconds(10))
+    }
+    XCTFail(
+      "History did not switch to the expected pagination mode"
+    )
   }
 }

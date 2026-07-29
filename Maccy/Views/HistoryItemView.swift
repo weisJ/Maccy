@@ -5,13 +5,12 @@ struct HistoryItemView: View {
   @Bindable var item: HistoryItemDecorator
   var previous: HistoryItemDecorator?
   var next: HistoryItemDecorator?
-  var index: Int
 
   private var visualIndex: Int? {
-    if appState.navigator.isMultiSelectInProgress && item.selectionIndex >= 0 {
-      return item.selectionIndex
-    }
-    return nil
+    guard item.selectionIndex >= 0 else { return nil }
+    return appState.navigator.isMultiSelectInProgress
+      ? item.selectionIndex
+      : nil
   }
 
   private var selectionAppearance: SelectionAppearance {
@@ -56,7 +55,7 @@ struct HistoryItemView: View {
       item.ensureThumbnailImage()
     }
     .onTapGesture {
-      if NSEvent.modifierFlags.contains(.command) && appState.multiSelectionEnabled {
+      if NSEvent.modifierFlags.contains(.command) {
         appState.navigator.addToSelection(item: item)
       } else {
         Task {

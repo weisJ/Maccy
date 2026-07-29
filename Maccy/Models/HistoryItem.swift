@@ -7,13 +7,12 @@ import Vision
 @Model
 class HistoryItem {
   static var supportedPins: Set<String> {
-    // "a" reserved for select all
     // "q" reserved for quit
     // "v" reserved for paste
     // "w" reserved for close window
     // "z" reserved for undo/redo
     var keys = Set([
-      "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l",
+      "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l",
       "m", "n", "o", "p", "r", "s", "t", "u", "x", "y"
     ])
 
@@ -163,7 +162,9 @@ class HistoryItem {
 
   /// Whether the item contains image data without decoding it into an image.
   var hasImageContent: Bool {
-    contentData(Self.imageTypes) != nil || universalClipboardImage
+    contents.contains {
+      Self.imageTypes.contains(NSPasteboard.PasteboardType($0.type))
+    } || universalClipboardImage
   }
 
   var image: NSImage? {

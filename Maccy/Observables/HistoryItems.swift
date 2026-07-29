@@ -1,5 +1,5 @@
 import Foundation
-import Observation
+import SwiftData
 
 enum HistoryItemSection: Equatable {
   case pinned
@@ -19,17 +19,36 @@ struct IndexedHistoryItem {
 struct LocatedHistoryItem {
   let item: HistoryItemDecorator
   let location: HistoryItemLocation
+  let revision: UInt64
+}
+
+enum HistoryItemsError: Error {
+  case staleLocation
 }
 
 protocol UnpinnedHistoryItems: AnyObject {
   var count: Int { get }
   var loadedItems: [IndexedHistoryItem] { get }
-  var supportsBoundaryRangeSelection: Bool { get }
+  var allowsSelectionExtensionToBoundary: Bool { get }
 
   @MainActor
   func item(at index: Int) async throws -> IndexedHistoryItem?
 
+  @MainActor
+  func first() async throws -> IndexedHistoryItem?
+
+  @MainActor
+  func last() async throws -> IndexedHistoryItem?
+
   func loadedItem(id: UUID) -> IndexedHistoryItem?
+
+  @MainActor
+  func contains(modelID: PersistentIdentifier) throws -> Bool
+
+  @MainActor
+  func resolve(
+    modelID: PersistentIdentifier
+  ) async throws -> IndexedHistoryItem?
 }
 
 extension UnpinnedHistoryItems {
@@ -40,7 +59,8 @@ extension UnpinnedHistoryItems {
 
   @MainActor
   func last() async throws -> IndexedHistoryItem? {
-    try await item(at: count - 1)
+    guard count > 0 else { return nil }
+    return try await item(at: count - 1)
   }
 
   @MainActor
@@ -56,50 +76,25 @@ extension UnpinnedHistoryItems {
   }
 }
 
-@Observable
-final class ResidentHistoryItems: UnpinnedHistoryItems {
-  private(set) var items: [HistoryItemDecorator] = []
-
-  var count: Int { items.count }
-  var loadedItems: [IndexedHistoryItem] {
-    items.enumerated().map {
-      IndexedHistoryItem(item: $0.element, index: $0.offset)
-    }
-  }
-  let supportsBoundaryRangeSelection = true
-
-  func replace(with items: [HistoryItemDecorator]) {
-    self.items = items
-  }
-
-  func item(at index: Int) async throws -> IndexedHistoryItem? {
-    guard items.indices.contains(index) else { return nil }
-    return IndexedHistoryItem(item: items[index], index: index)
-  }
-
-  func loadedItem(id: UUID) -> IndexedHistoryItem? {
-    guard let index = items.firstIndex(where: { $0.id == id }) else {
-      return nil
-    }
-    return IndexedHistoryItem(item: items[index], index: index)
-  }
-}
-
 /// Presents pinned and unpinned items as one ordered collection without
 /// requiring either section to know where it is displayed.
 final class HistoryItems {
   private let pinnedItems: () -> [HistoryItemDecorator]
   private let unpinnedItems: () -> any UnpinnedHistoryItems
   private let pinsPosition: () -> PinsPosition
+  /// Advances whenever an existing location could identify a different item.
+  private let revision: () -> UInt64
 
   init(
     pinnedItems: @escaping () -> [HistoryItemDecorator],
     unpinnedItems: @escaping () -> any UnpinnedHistoryItems,
-    pinsPosition: @escaping () -> PinsPosition
+    pinsPosition: @escaping () -> PinsPosition,
+    revision: @escaping () -> UInt64 = { 0 }
   ) {
     self.pinnedItems = pinnedItems
     self.unpinnedItems = unpinnedItems
     self.pinsPosition = pinsPosition
+    self.revision = revision
   }
 
   @MainActor
@@ -107,8 +102,8 @@ final class HistoryItems {
     pinnedItems().count + unpinnedItems().count
   }
 
-  var supportsBoundaryRangeSelection: Bool {
-    unpinnedItems().supportsBoundaryRangeSelection
+  var allowsSelectionExtensionToBoundary: Bool {
+    unpinnedItems().allowsSelectionExtensionToBoundary
   }
 
   var loadedItems: [LocatedHistoryItem] {
@@ -126,12 +121,55 @@ final class HistoryItems {
   func loadedItem(id: UUID) -> LocatedHistoryItem? {
     let pins = pinnedItems()
     if let index = pins.firstIndex(where: { $0.id == id }) {
-      return LocatedHistoryItem(
-        item: pins[index],
-        location: HistoryItemLocation(section: .pinned, index: index)
-      )
+      return located(pins[index], in: .pinned, at: index)
     }
     guard let result = unpinnedItems().loadedItem(id: id) else {
+      return nil
+    }
+    return located(result)
+  }
+
+  func loadedItem(
+    modelID: PersistentIdentifier
+  ) -> LocatedHistoryItem? {
+    let pins = pinnedItems()
+    if let index = pins.firstIndex(where: {
+      $0.item.persistentModelID == modelID
+    }) {
+      return located(pins[index], in: .pinned, at: index)
+    }
+    guard let result = unpinnedItems().loadedItems.first(where: {
+      $0.item.item.persistentModelID == modelID
+    }) else {
+      return nil
+    }
+    return located(result)
+  }
+
+  @MainActor
+  func contains(_ item: HistoryItemDecorator) -> Bool {
+    let modelID = item.item.persistentModelID
+    if pinnedItems().contains(where: {
+      $0.item.persistentModelID == modelID
+    }) {
+      return true
+    }
+    return (try? unpinnedItems().contains(modelID: modelID)) == true
+  }
+
+  @MainActor
+  func resolve(
+    _ item: HistoryItemDecorator
+  ) async throws -> LocatedHistoryItem? {
+    let pins = pinnedItems()
+    if let index = pins.firstIndex(where: {
+      $0.item.persistentModelID == item.item.persistentModelID
+    }) {
+      return located(pins[index], in: .pinned, at: index)
+    }
+    guard let result = try await unpinnedItems().resolve(
+      modelID: item.item.persistentModelID
+    ) else {
       return nil
     }
     return located(result)
@@ -250,6 +288,16 @@ final class HistoryItems {
 
   @MainActor
   func item(
+    before item: LocatedHistoryItem
+  ) async throws -> LocatedHistoryItem? {
+    try requireCurrent(item)
+    let previous = try await self.item(before: item.location)
+    try requireCurrent(item)
+    return previous
+  }
+
+  @MainActor
+  func item(
     after location: HistoryItemLocation
   ) async throws -> LocatedHistoryItem? {
     guard isValid(location) else { return nil }
@@ -277,6 +325,16 @@ final class HistoryItems {
       }
       return located(pin, in: .pinned, at: 0)
     }
+  }
+
+  @MainActor
+  func item(
+    after item: LocatedHistoryItem
+  ) async throws -> LocatedHistoryItem? {
+    try requireCurrent(item)
+    let next = try await self.item(after: item.location)
+    try requireCurrent(item)
+    return next
   }
 
   func isFirst(_ location: HistoryItemLocation?) -> Bool {
@@ -328,18 +386,40 @@ final class HistoryItems {
   ) -> LocatedHistoryItem {
     LocatedHistoryItem(
       item: item,
-      location: HistoryItemLocation(section: section, index: index)
+      location: HistoryItemLocation(section: section, index: index),
+      revision: revision()
     )
+  }
+
+  private func requireCurrent(_ item: LocatedHistoryItem) throws {
+    guard item.revision == revision() else {
+      throw HistoryItemsError.staleLocation
+    }
   }
 }
 
 extension HistoryItems {
   @MainActor
   func range(
+    from start: LocatedHistoryItem,
+    through end: LocatedHistoryItem
+  ) async throws -> [LocatedHistoryItem] {
+    try requireCurrent(start)
+    try requireCurrent(end)
+    let result = try await range(
+      from: start.location,
+      through: end.location
+    )
+    try requireCurrent(start)
+    return result
+  }
+
+  @MainActor
+  func range(
     from start: HistoryItemLocation,
     through end: HistoryItemLocation
   ) async throws -> [LocatedHistoryItem] {
-    guard supportsBoundaryRangeSelection,
+    guard allowsSelectionExtensionToBoundary,
       let startIndex = displayIndex(of: start),
       let endIndex = displayIndex(of: end)
     else {
@@ -356,6 +436,17 @@ extension HistoryItems {
         result.append(item)
       }
     }
+    return result
+  }
+
+  @MainActor
+  func nearest(
+    to item: LocatedHistoryItem,
+    where predicate: (HistoryItemDecorator) -> Bool
+  ) async throws -> LocatedHistoryItem? {
+    try requireCurrent(item)
+    let result = try await nearest(to: item.location, where: predicate)
+    try requireCurrent(item)
     return result
   }
 

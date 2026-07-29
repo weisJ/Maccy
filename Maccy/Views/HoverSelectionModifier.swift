@@ -2,15 +2,16 @@ import SwiftUI
 
 private struct HoverSelectionModifier: ViewModifier {
   @Environment(AppState.self) private var appState
-  var id: UUID
+  var selectionId: UUID
 
   func body(content: Content) -> some View {
     content.onHover { hovering in
       if hovering {
         if !appState.navigator.isKeyboardNavigating && !appState.navigator.isMultiSelectInProgress {
-          appState.navigator.selectWithoutScrolling(id: id)
+          appState.navigator.selectWithoutScrolling(id: selectionId)
         } else {
-          appState.navigator.hoverSelectionWhileKeyboardNavigating = id
+          appState.navigator.hoverSelectionWhileKeyboardNavigating =
+            selectionId
         }
       }
     }
@@ -18,7 +19,7 @@ private struct HoverSelectionModifier: ViewModifier {
 }
 
 extension View {
-  func hoverSelectionId(_ id: UUID) -> some View {
-    modifier(HoverSelectionModifier(id: id))
+  func hoverSelectionId(_ selectionId: UUID) -> some View {
+    modifier(HoverSelectionModifier(selectionId: selectionId))
   }
 }

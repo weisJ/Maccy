@@ -26,20 +26,11 @@ struct ContentView: View {
 
             VStack(alignment: .leading, spacing: 0) {
               HistoryListView(
-                searchQuery: $appState.history.searchQuery,
                 searchFocused: $searchFocused
               )
 
               FooterView(footer: appState.footer)
             }
-            .animation(
-              .default.speed(3),
-              value: appState.history.pinnedItems
-            )
-            .animation(
-              .default.speed(3),
-              value: appState.history.unpinnedItems.items
-            )
             .animation(
               .default.speed(3),
               value: appState.history.pasteStack?.id
