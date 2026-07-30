@@ -27,10 +27,10 @@ struct SlideoutContentView: View {
     VStack(alignment: .center) {
       ToolbarView()
       if let leadItem = appState.navigator.leadHistoryItem {
-        if selectionCount > 1 {
+        if appState.navigator.isManualMultiSelect || selectionCount > 1 {
           StackedCardsView(
             items: appState.navigator.selection.items,
-            maxCount: 5
+            maxCount: 10
           ) { item in
             cardView(for: item, leadItem: leadItem)
           }

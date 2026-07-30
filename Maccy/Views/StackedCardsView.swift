@@ -30,10 +30,28 @@ where Item.ID == UUID {
     return items.last?.id
   }
 
+  private func opacity(for index: Int) -> Double {
+    let totalCount = min(maxCount, items.count)
+
+    // Keep top 2 always fully opaque
+    let gradientCount = max(0, totalCount - 5)
+
+    guard index < gradientCount else {
+      return 1
+    }
+
+    guard gradientCount >= 1 else {
+      return 0
+    }
+
+    return Double(index) / Double(gradientCount)
+  }
+
   @ViewBuilder
   private func cardItem<CardContent: View>(
     _ size: CGSize,
     _ id: UUID,
+    _ index: Int,
     content: () -> CardContent = { Color.clear }
   ) -> some View {
     content()
@@ -49,13 +67,14 @@ where Item.ID == UUID {
         color: Color(.sRGBLinear, white: 0, opacity: 0.1),
         radius: 4
       )
+      .opacity(opacity(for: index))
   }
 
   var body: some View {
     GeometryReader { geo in
       ZStack(alignment: Alignment(horizontal: .center, vertical: .top)) {
-        ForEach(items.suffix(maxCount), id: \.id) { element in
-          cardItem(geo.size, element.id) {
+        EnumeratedForEach(data: items.suffix(maxCount)) { (element, index) in
+          cardItem(geo.size, element.id, index) {
             content(element)
           }
         }
