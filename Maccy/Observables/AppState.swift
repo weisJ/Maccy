@@ -8,6 +8,10 @@ import SwiftUI
 class AppState: Sendable {
   static let shared = AppState(history: History.shared, footer: Footer())
 
+  var multiSelectionEnabled: Bool {
+    Defaults[.experimentalEnableMultiSelect]
+  }
+
   var appDelegate: AppDelegate?
   var popup: Popup
   var history: History

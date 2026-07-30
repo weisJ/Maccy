@@ -1,5 +1,6 @@
 import SwiftUI
 import Defaults
+import Settings
 
 struct AdvancedSettingsPane: View {
   var body: some View {
@@ -37,6 +38,14 @@ struct AdvancedSettingsPane: View {
       Defaults.Toggle(key: .clearSystemClipboard) {
         Text("ClearSystemClipboard", tableName: "AdvancedSettings")
       }.help(Text("ClearSystemClipboardTooltip", tableName: "AdvancedSettings"))
+
+      Divider()
+
+      Settings.Section(title: "Experimental Features") {
+        Defaults.Toggle(key: .experimentalEnableMultiSelect) {
+          Text("ExperimentalMultiSelect", tableName: "AdvancedSettings")
+        }.help(Text("ExperimentalMultiSelectTooltip", tableName: "AdvancedSettings"))
+      }
     }
     .frame(minWidth: 350, maxWidth: 450)
     .padding()
