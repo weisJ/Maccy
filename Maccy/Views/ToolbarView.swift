@@ -179,6 +179,7 @@ struct ToolbarView: View {
           Image(systemName: "stop")
         }
         .accessibilityLabel(Text("toolbar_remove_paste_stack_action"))
+        .help(Text("StopPasteStack", tableName: "PreviewItemView"))
       }
     }
     .sheet(item: $editingItem, onDismiss: {
