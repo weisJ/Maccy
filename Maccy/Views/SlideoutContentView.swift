@@ -25,7 +25,6 @@ struct SlideoutContentView: View {
 
   var body: some View {
     VStack(alignment: .center) {
-      ToolbarView()
       if let leadItem = appState.navigator.leadHistoryItem {
         if appState.navigator.isManualMultiSelect || selectionCount > 1 {
           StackedCardsView(

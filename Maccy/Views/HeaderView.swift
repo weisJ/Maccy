@@ -44,8 +44,8 @@ struct HeaderView: View {
         )
         .opacity(appState.searchVisible ? 1 : 0)
 
-        HStack {
-          ToolbarButton {
+        ToolbarButtonGroup {
+          ToolbarButton(sharesGlassBackground: true) {
             controller.togglePreview()
           } label: {
             Image(

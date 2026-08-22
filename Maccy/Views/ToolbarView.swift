@@ -34,6 +34,10 @@ private struct KeyboardShortcutHelpModifier: ViewModifier {
 }
 
 struct ToolbarButton<Label: View>: View {
+  @Environment(\.isEnabled) private var isEnabled
+  @State private var isHovering = false
+
+  var sharesGlassBackground = false
   let action: @MainActor () -> Void
   let label: () -> Label
 
@@ -42,7 +46,15 @@ struct ToolbarButton<Label: View>: View {
       label()
     }
     .frame(width: 28, height: 28)
-    .modifier(ToolbarButtonModifier())
+    .modifier(
+      ToolbarButtonModifier(
+        sharesGlassBackground: sharesGlassBackground,
+        isHovering: isHovering && isEnabled
+      )
+    )
+    .onHover(perform: { inside in
+      isHovering = inside
+    })
     .excludeFromWindowMovableByBackground()
   }
 
@@ -65,12 +77,24 @@ struct ToolbarButton<Label: View>: View {
 }
 
 private struct ToolbarButtonModifier: ViewModifier {
+  let sharesGlassBackground: Bool
+  let isHovering: Bool
 
   func body(content: Content) -> some View {
     if #available(macOS 26.0, *) {
-      content
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
+      if sharesGlassBackground {
+        content
+          .buttonStyle(.plain)
+          .background {
+            Circle()
+              .fill(Color.primary.opacity(isHovering ? 0.1 : 0))
+          }
+          .animation(.easeOut(duration: 0.12), value: isHovering)
+      } else {
+        content
+          .buttonStyle(.glass)
+          .buttonBorderShape(.circle)
+      }
     } else {
       content
         .buttonStyle(.bordered)
@@ -78,6 +102,38 @@ private struct ToolbarButtonModifier: ViewModifier {
     }
   }
 
+}
+
+private struct SharedToolbarButtonBackgroundModifier: ViewModifier {
+
+  func body(content: Content) -> some View {
+    if #available(macOS 26.0, *) {
+      content
+        .glassEffect(.regular.interactive(), in: .capsule)
+    } else {
+      content
+    }
+  }
+
+}
+
+struct ToolbarButtonGroup<Content: View>: View {
+  @ViewBuilder var content: () -> Content
+
+  private var spacing: CGFloat {
+    if #available(macOS 26.0, *) {
+      return 0
+    } else {
+      return 8
+    }
+  }
+
+  var body: some View {
+    HStack(spacing: spacing) {
+      content()
+    }
+    .modifier(SharedToolbarButtonBackgroundModifier())
+  }
 }
 
 private struct ToolbarContainerModifier: ViewModifier {
@@ -94,28 +150,9 @@ private struct ToolbarContainerModifier: ViewModifier {
 
 }
 
-extension View {
-  @ViewBuilder fileprivate func unionEffect<ID: Hashable>(
-    id: ID,
-    namespace: Namespace.ID
-  ) -> some View {
-    if #available(macOS 26.0, *) {
-      self.glassEffectUnion(id: id, namespace: namespace)
-    } else {
-      self
-    }
-  }
-}
-
 struct ToolbarView: View {
   @State private var appState = AppState.shared
   @State private var editingItem: HistoryItemDecorator?
-
-  @Namespace var unionNamespace
-
-  enum Section: Hashable {
-    case itemOptions
-  }
 
   private var shouldUnpin: Bool {
     return appState.navigator.selection.items.allSatisfy { $0.isPinned }
@@ -173,48 +210,48 @@ struct ToolbarView: View {
           .disabled(selectedImageText == nil)
         }
 
-        ToolbarButton {
-          withAnimation {
-            appState.togglePin()
+        ToolbarButtonGroup {
+          ToolbarButton(sharesGlassBackground: true) {
+            withAnimation {
+              appState.togglePin()
+            }
+          } label: {
+            if (appState.navigator.selection.items.allSatisfy { $0.isPinned }) {
+              Image(systemName: "pin.slash")
+            } else {
+              Image(systemName: "pin")
+            }
           }
-        } label: {
-          if (appState.navigator.selection.items.allSatisfy { $0.isPinned }) {
-            Image(systemName: "pin.slash.fill")
-          } else {
-            Image(systemName: "pin")
+          .shortcutKeyHelp(
+            name: .pin,
+            key: shouldUnpin ? "UnpinKey" : "PinKey",
+            tableName: "PreviewItemView",
+            replacementKey: "pinKey"
+          )
+          .disabled(pinActionDisabled)
+
+          ToolbarButton(sharesGlassBackground: true) {
+            appState.isEditingItem = true
+            editingItem = editableItem
+          } label: {
+            Image(systemName: "pencil.and.list.clipboard")
           }
-        }
-        .shortcutKeyHelp(
-          name: .pin,
-          key: shouldUnpin ? "UnpinKey" : "PinKey",
-          tableName: "PreviewItemView",
-          replacementKey: "pinKey"
-        )
-        .disabled(pinActionDisabled)
-        .unionEffect(id: Section.itemOptions, namespace: unionNamespace)
+          .shortcutKeyHelp(key: "EditItem", tableName: "PreviewItemView")
+          .disabled(!editItemEnabled)
+          .accessibilityIdentifier("edit-item")
 
-        ToolbarButton {
-          appState.isEditingItem = true
-          editingItem = editableItem
-        } label: {
-          Image(systemName: "pencil.and.list.clipboard")
+          ToolbarButton(sharesGlassBackground: true) {
+            appState.deleteSelection()
+          } label: {
+            Image(systemName: "trash")
+          }
+          .shortcutKeyHelp(
+            name: .delete,
+            key: "DeleteKey",
+            tableName: "PreviewItemView",
+            replacementKey: "deleteKey"
+          )
         }
-        .shortcutKeyHelp(key: "EditItem", tableName: "PreviewItemView")
-        .disabled(!editItemEnabled)
-        .accessibilityIdentifier("edit-item")
-
-        ToolbarButton {
-          appState.deleteSelection()
-        } label: {
-          Image(systemName: "trash")
-        }
-        .shortcutKeyHelp(
-          name: .delete,
-          key: "DeleteKey",
-          tableName: "PreviewItemView",
-          replacementKey: "deleteKey"
-        )
-        .unionEffect(id: Section.itemOptions, namespace: unionNamespace)
       }
 
       if appState.navigator.pasteStackSelected {
